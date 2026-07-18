@@ -29,9 +29,11 @@ redis_result="$(kubectl exec --namespace "$namespace" statefulset/coderushoj-inf
   /bin/sh -ec 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping')"
 [[ "$redis_result" == "PONG" ]] || die "Redis smoke command failed"
 
-kubectl exec --namespace "$namespace" statefulset/coderushoj-infra-rocketmq-broker -- \
-  sh mqadmin topicList -n coderushoj-infra-rocketmq-namesrv:9876 \
-  | grep -Fxq submission-topic
+rocketmq_topics="$(kubectl exec --namespace "$namespace" \
+  statefulset/coderushoj-infra-rocketmq-broker -- \
+  sh mqadmin topicList -n coderushoj-infra-rocketmq-namesrv:9876)"
+grep -Fxq submission-topic <<<"$rocketmq_topics" \
+  || die "RocketMQ submission topic is missing"
 
 kubectl delete job coderushoj-s3-smoke --namespace "$namespace" --ignore-not-found >/dev/null
 kubectl apply --filename "$SCRIPT_DIR/s3-job.yaml" >/dev/null
@@ -41,9 +43,9 @@ kubectl wait --namespace "$namespace" --for=condition=Complete \
 kubectl wait --namespace "$namespace" --for=condition=Programmed \
   gateway/coderushoj --timeout=120s
 
-if kubectl get pods --namespace "$namespace" \
-  --output=jsonpath='{range .items[*].spec.containers[*]}{.image}{"\n"}{end}' \
-  | grep -Eq '(^|:)latest$'; then
+running_images="$(kubectl get pods --namespace "$namespace" \
+  --output=jsonpath='{range .items[*].spec.containers[*]}{.image}{"\n"}{end}')"
+if grep -Eq '(^|:)latest$' <<<"$running_images"; then
   die "a running Pod uses an unpinned latest image"
 fi
 

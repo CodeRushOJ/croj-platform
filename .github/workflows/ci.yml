@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Contracts, docs, manifests, and security
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.15.0'
+
+      - name: Install documentation dependencies
+        run: |
+          corepack enable
+          cd docs
+          pnpm install --frozen-lockfile
+
+      - name: Run repository validation
+        run: make validate
+
+      - name: Build documentation explicitly
+        run: cd docs && pnpm build
+
+      - name: Validate rendered Kubernetes resources
+        run: |
+          go install github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0
+          helm template coderushoj-infra charts/coderushoj-infra --namespace coderushoj \
+            | kubeconform -strict -summary -ignore-missing-schemas
+          helm template coderushoj charts/coderushoj --namespace coderushoj \
+            | kubeconform -strict -summary -ignore-missing-schemas
+
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: v0.72.0
+          cache: true
+
+      - name: Scan source, dependencies, and secrets
+        run: |
+          trivy fs --scanners secret --exit-code 1 --skip-dirs docs/node_modules .
+          trivy fs --db-repository ghcr.io/aquasecurity/trivy-db:2 --no-progress \
+            --scanners vuln,misconfig --severity HIGH,CRITICAL --ignore-unfixed \
+            --exit-code 1 --skip-dirs docs/node_modules .
+
+  platform-smoke:
+    name: Three-node Kind platform smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Install Kind
+        run: go install sigs.k8s.io/kind@v0.32.0
+
+      - name: Create reference cluster
+        run: kind create cluster --name coderushoj --config config/kind/cluster.yaml --wait 240s
+
+      - name: Deploy platform
+        run: scripts/deploy.sh
+
+      - name: Run live platform acceptance
+        run: tests/smoke/platform.sh
+
+      - name: Collect failure diagnostics
+        if: failure()
+        run: scripts/diagnostics.sh || true
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: platform-smoke-diagnostics-${{ github.run_id }}
+          path: .workspace/diagnostics/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Delete reference cluster
+        if: always()
+        run: kind delete cluster --name coderushoj

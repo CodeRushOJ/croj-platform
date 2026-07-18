@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Verify and publish immutable artifacts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out signed tag
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify version, charts, changelog, and tag signature
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(tr -d '\r\n' < VERSION)"
+          test "$GITHUB_REF_NAME" = "v$version"
+          test "$(helm show chart charts/coderushoj | awk '/^version:/ {print $2}')" = "$version"
+          test "$(helm show chart charts/coderushoj-infra | awk '/^version:/ {print $2}')" = "$version"
+          grep -Fq "## [$version]" CHANGELOG.md
+          release_section_file="$(mktemp)"
+          awk -v version="$version" '
+            $0 ~ "^## \\[" version "\\]" { capture=1 }
+            capture && $0 ~ /^## \[/ && $0 !~ "^## \\[" version "\\]" { exit }
+            capture { print }
+          ' CHANGELOG.md > "$release_section_file"
+          for heading in Features Fixes Security Migrations Operations "Known Limitations" Upgrade Rollback; do
+            grep -Fq "### $heading" "$release_section_file"
+          done
+          rm -f "$release_section_file"
+          tag_object="$(git rev-parse "$GITHUB_REF_NAME^{tag}")"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_object" --jq .verification.verified)" = true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.15.0'
+
+      - name: Build documentation
+        run: |
+          corepack enable
+          cd docs
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Package Helm charts and release notes
+        run: |
+          version="$(tr -d '\r\n' < VERSION)"
+          mkdir -p dist
+          helm lint charts/coderushoj
+          helm lint charts/coderushoj-infra
+          helm package charts/coderushoj --destination dist
+          helm package charts/coderushoj-infra --destination dist
+          awk -v version="$version" '
+            $0 ~ "^## \\[" version "\\]" { capture=1 }
+            capture && $0 ~ /^## \[/ && $0 !~ "^## \\[" version "\\]" { exit }
+            capture { print }
+          ' CHANGELOG.md > dist/release-notes.md
+          test -s dist/release-notes.md
+
+      - name: Set immutable image name
+        run: echo "DOCS_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/coderushoj-docs" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Build and publish documentation image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: docs
+          file: docs/Dockerfile
+          push: true
+          tags: |
+            ${{ env.DOCS_IMAGE }}:${{ github.ref_name }}
+            ${{ env.DOCS_IMAGE }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate artifact checksums
+        run: cd dist && sha256sum ./*.tgz ./release-notes.md > SHA256SUMS
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            dist/*.tgz dist/SHA256SUMS \
+            --verify-tag \
+            --title "CodeRushOJ $GITHUB_REF_NAME" \
+            --notes-file dist/release-notes.md

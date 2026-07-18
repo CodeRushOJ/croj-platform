@@ -63,7 +63,17 @@ class DocumentationContractTest(unittest.TestCase):
         self.assertIn('"build": "vitepress build"', package)
         dockerfile = (DOCS / "Dockerfile").read_text()
         self.assertIn("pnpm build", dockerfile)
+        self.assertIn("pnpm-workspace.yaml", dockerfile)
+        self.assertIn("CODERUSHOJ_DOCS_LAST_UPDATED=false", dockerfile)
+        self.assertGreaterEqual(dockerfile.count("@sha256:"), 2)
+        self.assertIn("USER 101:101", dockerfile)
+        self.assertIn("HEALTHCHECK", dockerfile)
         self.assertNotIn(":latest", dockerfile)
+        dockerignore = (DOCS / ".dockerignore").read_text()
+        self.assertIn("node_modules", dockerignore)
+        self.assertIn(".vitepress/dist", dockerignore)
+        config = (DOCS / ".vitepress/config.mts").read_text()
+        self.assertIn("CODERUSHOJ_DOCS_LAST_UPDATED", config)
 
     def test_root_readme_points_to_quickstart(self):
         readme = (ROOT / "README.md").read_text()

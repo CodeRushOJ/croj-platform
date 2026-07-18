@@ -6,7 +6,7 @@ export default withMermaid({
   description: '可部署、可扩展、可验证的开源在线评测系统',
   srcExclude: ['superpowers/**'],
   cleanUrls: true,
-  lastUpdated: true,
+  lastUpdated: process.env.CODERUSHOJ_DOCS_LAST_UPDATED !== 'false',
   head: [
     ['meta', { name: 'theme-color', content: '#5b5bd6' }],
     ['meta', { name: 'color-scheme', content: 'light dark' }]
@@ -31,7 +31,9 @@ export default withMermaid({
         text: '工程设计',
         items: [
           { text: '平台架构', link: '/architecture/platform' },
-          { text: '项目历史', link: '/project/history' }
+          { text: '项目历史', link: '/project/history' },
+          { text: '里程碑与 Issue', link: '/project/milestones' },
+          { text: '发版流程', link: '/project/release-process' }
         ]
       },
       {

@@ -67,6 +67,12 @@ class ScriptContractTest(unittest.TestCase):
         self.assertIn("/run/systemd/resolve/stub-resolv.conf", contents)
         self.assertIn("colima ssh", contents)
 
+    def test_smoke_test_avoids_quick_exit_pipe_with_pipefail(self):
+        contents = (ROOT / "tests/smoke/platform.sh").read_text()
+        self.assertNotIn("| grep -Fxq submission-topic", contents)
+        self.assertIn("rocketmq_topics=", contents)
+        self.assertIn("running_images=", contents)
+
     @unittest.skipUnless(shutil.which("shellcheck"), "ShellCheck is not installed")
     def test_shellcheck_has_no_findings(self):
         result = subprocess.run(

@@ -50,6 +50,7 @@ class InfrastructureRenderTest(unittest.TestCase):
     def test_security_and_secret_contracts(self):
         rendered = self.render()
         self.assertGreaterEqual(rendered.count("allowPrivilegeEscalation: false"), 5)
+        self.assertGreaterEqual(rendered.count("readOnlyRootFilesystem: true"), 5)
         self.assertGreaterEqual(rendered.count("runAsNonRoot: true"), 5)
         self.assertGreaterEqual(rendered.count("seccompProfile:"), 5)
         self.assertIn("kind: NetworkPolicy", rendered)

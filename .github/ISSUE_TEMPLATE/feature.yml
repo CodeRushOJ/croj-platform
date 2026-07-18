@@ -1,0 +1,41 @@
+name: Feature
+description: 提议可独立开发、测试和发布的功能
+title: "[Feature]: "
+labels: ["type/feature"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description and user story
+      description: 描述用户、目标、价值和不在范围内的内容。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: 给出可自动或人工验证的完成条件。
+      placeholder: "- [ ] Given … when … then …"
+    validations:
+      required: true
+  - type: textarea
+    id: design
+    attributes:
+      label: Design, API, and data impact
+      description: 说明界面、API、DDL、权限、安全和可观测性影响。
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Tests and rollout evidence
+      description: 说明需要沉淀的测试、截图、指标以及回滚验证。
+    validations:
+      required: true
+  - type: dropdown
+    id: release
+    attributes:
+      label: Release note category
+      options: [Features, Fixes, Security, Migrations, Operations, Documentation]
+    validations:
+      required: true

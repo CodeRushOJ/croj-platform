@@ -70,6 +70,27 @@ kubectl logs -n envoy-gateway-system deployment/envoy-gateway --tail=200
 
 Gateway 应为 `Programmed=True`。应用镜像尚未接入或 Service 不存在时，HTTPRoute 会显示 `ResolvedRefs=False`；这与入口控制器故障是两类问题。
 
+## Sandbox 与 EndpointSlice
+
+先区分“没有 Pod”“Pod 未就绪”和“发现权限失败”：
+
+```bash
+kubectl get deploy,pod,svc,endpointslice -n coderushoj \
+  -l app.kubernetes.io/name=croj-sandbox -o wide
+kubectl describe pod -n coderushoj -l app.kubernetes.io/name=croj-sandbox
+kubectl logs -n coderushoj deployment/croj-sandbox --tail=200
+kubectl auth can-i list endpointslices.discovery.k8s.io \
+  --as system:serviceaccount:coderushoj:coderushoj-judging-server \
+  --namespace coderushoj
+```
+
+- 没有 Deployment：确认安装时显式使用 `sandbox.enabled=true`。
+- `Pending` 且提示节点选择失败：开发节点应有 `coderushoj.io/judge-worker=true`；生产节点应有 `coderushoj.io/sandbox-worker=true`。
+- `Pending` 且 RuntimeClass 不存在：安装并验证 `kata-qemu`，不要改用 privileged 绕过。
+- `Ready=False`：查看启动自检日志，确认五语言工具链、`/tmp` 和 cgroup 委派可用。
+- judging-server 报 `no ready sandbox endpoints`：Service 必须名为 `croj-sandbox`，端口必须名为 `grpc`，且 EndpointSlice 地址为 Ready、非 Terminating。
+- 本地 cgroup permission denied：只在隔离 Kind VM 中使用 `values-kind.yaml`；生产环境应修复 RuntimeClass/节点委派，而不是挂载宿主 cgroup。
+
 ## 一键重试前
 
 不要把删除 namespace/PVC 当作通用修复。先备份、确认资源所有权、记录 Helm revision，再执行 `helm upgrade` 或 `helm rollback`。

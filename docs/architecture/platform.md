@@ -13,11 +13,11 @@ flowchart LR
   API --> MQ["RocketMQ 5.5"]
   API --> S3["SeaweedFS S3"]
   MQ --> JUDGE["Go 判题编排器"]
-  JUDGE --> KAPI["Kubernetes API"]
-  KAPI --> JOB1["临时 Judge Job"]
-  KAPI --> JOBN["临时 Judge Job"]
-  JOB1 --> S3
-  JOBN --> S3
+  JUDGE --> ES["Kubernetes EndpointSlice"]
+  ES --> SB1["Sandbox gRPC Pod 1"]
+  ES --> SBN["Sandbox gRPC Pod N"]
+  SB1 --> S3
+  SBN --> S3
 ```
 
 ## 仓库边界
@@ -39,8 +39,8 @@ sequenceDiagram
   participant DB as MySQL
   participant MQ as RocketMQ
   participant Judge as 判题编排器
-  participant K8s as Kubernetes API
-  participant Job as Sandbox Job
+  participant K8s as EndpointSlice
+  participant Sandbox as Sandbox gRPC
   participant S3 as SeaweedFS
 
   User->>API: 提交源码
@@ -49,16 +49,20 @@ sequenceDiagram
   API->>MQ: 发布版本化判题命令
   MQ->>Judge: 至少一次投递
   Judge->>DB: 条件领取 attempt
-  Judge->>K8s: 创建带 deadline 的 Job
-  Job->>S3: 读取不可变测试包
-  Job-->>Judge: 有界结构化结果
+  Judge->>K8s: 查询 croj-sandbox Ready endpoints
+  K8s-->>Judge: 50051/grpc 地址快照
+  Judge->>Sandbox: Execute（有限时、内存与输出）
+  Sandbox->>S3: 读取不可变测试包
+  Sandbox-->>Judge: 有界结构化结果
   Judge->>DB: CAS 写入终态与计分
   API-->>User: 查询最终结果
 ```
 
 ## Kubernetes Service/Endpoint 发现
 
-判题服务不再依赖 ZooKeeper。长期运行服务通过 Kubernetes Service 和 EndpointSlice 发现与负载均衡；沙箱计算由 Kubernetes Job 表达，调度器把任务放到带 `judge-worker` 标签的节点。这样服务健康、滚动更新、容量限制和故障重试都由同一控制面观察。
+判题服务不再依赖 ZooKeeper。`croj-sandbox` 以可水平扩展的 gRPC Deployment 运行，Service 固定暴露名为 `grpc` 的 `50051/TCP` 端口。判题编排器读取 Service 拥有的 EndpointSlice，只选择 Ready 且未终止的地址，并以并发安全的轮询策略负载均衡。Pod UID 通过 Downward API 注入执行器，避免同一节点上的 cgroup 名冲突。
+
+本地 Kind profile 把 sandbox 放在 `coderushoj.io/judge-worker=true` 节点并显式开启 privileged 与 host cgroup 挂载；生产 profile 则要求 `coderushoj.io/sandbox-worker=true` 独立节点池、隔离 RuntimeClass、不可变镜像 digest 和无宿主 cgroup 挂载。两种 profile 不能混用。
 
 ## 数据职责
 
@@ -69,4 +73,4 @@ sequenceDiagram
 
 ## 信任边界
 
-后端和判题编排器属于可信控制面；参赛源码与沙箱 Job 属于不可信计算面。目标 Job 采用非 root、只读根文件系统、能力删除、禁止提权、RuntimeDefault seccomp、资源配额、截止时间与默认无网络策略。测试数据凭据只提供给可信初始化步骤，不挂载到参赛程序容器。
+后端和判题编排器属于可信控制面；参赛源码与 sandbox Pod 属于不可信计算面。生产参考 profile 采用隔离 RuntimeClass、非 root、只读根文件系统、能力删除、禁止提权、RuntimeDefault seccomp、资源配额、专用节点和默认无网络策略。开发 profile 的高权限仅用于本机验证，不构成生产安全基线。测试数据凭据只提供给可信控制面，不直接挂载到参赛程序。

@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "sandbox": {
+      "type": "object",
+      "required": ["enabled", "replicaCount", "image", "service", "resources", "securityContext", "hostCgroup"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "replicaCount": { "type": "integer", "minimum": 1 },
+        "image": {
+          "type": "object",
+          "required": ["repository", "tag", "digest", "requireDigest", "pullPolicy"],
+          "properties": {
+            "repository": { "type": "string", "minLength": 1 },
+            "tag": { "type": "string", "minLength": 1 },
+            "digest": { "type": "string" },
+            "requireDigest": { "type": "boolean" },
+            "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+          }
+        },
+        "service": {
+          "type": "object",
+          "required": ["name", "port"],
+          "properties": {
+            "name": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+          }
+        },
+        "runtimeClassName": { "type": "string" },
+        "nodeSelector": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 1 },
+        "securityContext": {
+          "type": "object",
+          "required": ["privileged", "allowPrivilegeEscalation", "readOnlyRootFilesystem", "runAsNonRoot"],
+          "properties": {
+            "privileged": { "type": "boolean" },
+            "allowPrivilegeEscalation": { "type": "boolean" },
+            "readOnlyRootFilesystem": { "type": "boolean" },
+            "runAsNonRoot": { "type": "boolean" }
+          }
+        },
+        "hostCgroup": {
+          "type": "object",
+          "required": ["enabled", "path", "mountPropagation"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "path": { "type": "string", "pattern": "^/" },
+            "mountPropagation": { "enum": ["None", "HostToContainer", "Bidirectional"] }
+          }
+        }
+      }
+    }
+  }
+}

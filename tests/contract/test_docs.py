@@ -12,6 +12,7 @@ class DocumentationContractTest(unittest.TestCase):
         required = (
             "index.md",
             "guide/quickstart.md",
+            "guide/sandbox-deployment.md",
             "architecture/platform.md",
             "operations/troubleshooting.md",
             "operations/backup-restore.md",
@@ -22,7 +23,12 @@ class DocumentationContractTest(unittest.TestCase):
             self.assertTrue((DOCS / relative_path).is_file(), f"missing docs page: {relative_path}")
 
         config = (DOCS / ".vitepress/config.mts").read_text()
-        for path in ("/guide/quickstart", "/architecture/platform", "/operations/troubleshooting"):
+        for path in (
+            "/guide/quickstart",
+            "/guide/sandbox-deployment",
+            "/architecture/platform",
+            "/operations/troubleshooting",
+        ):
             self.assertIn(path, config)
         self.assertIn("withMermaid", config)
         self.assertIn("superpowers/**", config)
@@ -80,6 +86,24 @@ class DocumentationContractTest(unittest.TestCase):
         self.assertIn("docs/guide/quickstart.md", readme)
         self.assertIn("croj-frontend", readme)
         self.assertIn("croj-backend", readme)
+
+    def test_sandbox_deployment_documents_security_profiles_and_discovery(self):
+        deployment = (DOCS / "guide/sandbox-deployment.md").read_text()
+        for contract in (
+            "croj-sandbox",
+            "grpc",
+            "50051",
+            "EndpointSlice",
+            "CROJ_SANDBOX_INSTANCE_ID",
+            "coderushoj.io/judge-worker=true",
+            "coderushoj.io/sandbox-worker=true",
+            "values-kind.yaml",
+            "values-production.yaml",
+            "kata-qemu",
+            "sandbox.image.digest",
+            "privileged",
+        ):
+            self.assertIn(contract, deployment)
 
     def test_docs_links_build(self):
         if not (DOCS / "pnpm-lock.yaml").is_file():

@@ -61,6 +61,8 @@ make compose-down
 
 ## 路径 B：Kubernetes 标准部署
 
+Kind/Helm 路径要求 Linux cgroup v2；macOS 通过 Colima VM 提供 Linux 内核。平台底座部署不会默认启动 sandbox。要运行不可信代码，还需要构建 `croj-sandbox` 镜像，并按 [Sandbox Kubernetes 部署](./sandbox-deployment.md) 选择本地开发或生产隔离 profile。
+
 一条完整的本地部署链路：
 
 ```bash
@@ -80,6 +82,8 @@ make smoke
 6. 安装 `coderushoj.local` 的 `/`、`/api`、`/docs` 路由；
 7. 验证 SQL、缓存、消息主题、S3 读写和 Gateway 状态。
 
+应用 Chart 中的 sandbox 默认为 `sandbox.enabled=false`。这是镜像接入期间的安全门禁，不影响基础设施与 Gateway 冒烟测试，也避免安装平台时意外获得节点级权限。
+
 查看状态：
 
 ```bash
@@ -87,6 +91,16 @@ kubectl get nodes -L coderushoj.io/judge-worker
 kubectl get pods,pvc -n coderushoj
 kubectl get gateway,httproute -n coderushoj
 helm list -n coderushoj
+```
+
+需要验证 sandbox 清单但不启动服务时：
+
+```bash
+helm template coderushoj ./charts/coderushoj \
+  --namespace coderushoj \
+  --values ./charts/coderushoj/values-kind.yaml \
+  --set sandbox.enabled=true \
+  | kubeconform -strict -summary -ignore-missing-schemas
 ```
 
 本地入口使用 `Host` 头：

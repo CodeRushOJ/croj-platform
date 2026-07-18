@@ -1,0 +1,150 @@
+{{- if .Values.sandbox.enabled }}
+{{- if and .Values.sandbox.image.requireDigest (empty .Values.sandbox.image.digest) }}
+{{- fail "sandbox.image.digest is required when sandbox.image.requireDigest=true" }}
+{{- end }}
+{{- $sandboxName := .Values.sandbox.service.name }}
+{{- $selectorLabels := dict "app.kubernetes.io/name" $sandboxName "app.kubernetes.io/instance" .Release.Name }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $sandboxName }}
+  labels:
+    {{- toYaml $selectorLabels | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- toYaml $selectorLabels | nindent 4 }}
+  ports:
+    - name: grpc
+      port: {{ .Values.sandbox.service.port }}
+      targetPort: grpc
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $sandboxName }}
+  labels:
+    {{- toYaml $selectorLabels | nindent 4 }}
+spec:
+  replicas: {{ .Values.sandbox.replicaCount }}
+  selector:
+    matchLabels:
+      {{- toYaml $selectorLabels | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- toYaml $selectorLabels | nindent 8 }}
+        {{- with .Values.sandbox.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.sandbox.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.sandbox.terminationGracePeriodSeconds }}
+      {{- with .Values.sandbox.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sandbox.runtimeClassName }}
+      runtimeClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.sandbox.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sandbox.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sandbox.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: sandbox
+          image: "{{ .Values.sandbox.image.repository }}{{- with .Values.sandbox.image.digest }}@{{ . }}{{- else }}:{{ $.Values.sandbox.image.tag }}{{- end }}"
+          imagePullPolicy: {{ .Values.sandbox.image.pullPolicy }}
+          {{- with .Values.sandbox.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.sandbox.service.port }}
+              protocol: TCP
+          env:
+            - name: CROJ_SANDBOX_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            {{- range $name, $value := .Values.sandbox.env }}
+            - name: {{ $name }}
+              value: {{ $value | quote }}
+            {{- end }}
+          startupProbe:
+            grpc:
+              port: {{ .Values.sandbox.service.port }}
+            failureThreshold: {{ .Values.sandbox.probes.startup.failureThreshold }}
+            periodSeconds: {{ .Values.sandbox.probes.startup.periodSeconds }}
+          readinessProbe:
+            grpc:
+              port: {{ .Values.sandbox.service.port }}
+            failureThreshold: {{ .Values.sandbox.probes.readiness.failureThreshold }}
+            periodSeconds: {{ .Values.sandbox.probes.readiness.periodSeconds }}
+          livenessProbe:
+            grpc:
+              port: {{ .Values.sandbox.service.port }}
+            failureThreshold: {{ .Values.sandbox.probes.liveness.failureThreshold }}
+            periodSeconds: {{ .Values.sandbox.probes.liveness.periodSeconds }}
+          resources:
+            {{- toYaml .Values.sandbox.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.sandbox.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: sandbox-tmp
+              mountPath: /tmp
+            {{- if .Values.sandbox.hostCgroup.enabled }}
+            - name: host-cgroup
+              mountPath: /sys/fs/cgroup
+              mountPropagation: {{ .Values.sandbox.hostCgroup.mountPropagation }}
+            {{- end }}
+      volumes:
+        - name: sandbox-tmp
+          emptyDir:
+            sizeLimit: 4Gi
+        {{- if .Values.sandbox.hostCgroup.enabled }}
+        - name: host-cgroup
+          hostPath:
+            path: {{ .Values.sandbox.hostCgroup.path }}
+            type: Directory
+        {{- end }}
+{{- if .Values.sandbox.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $sandboxName }}
+  labels:
+    {{- toYaml $selectorLabels | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- toYaml $selectorLabels | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- toYaml .Values.sandbox.networkPolicy.judgingServerPodLabels | nindent 14 }}
+      ports:
+        - port: {{ .Values.sandbox.service.port }}
+          protocol: TCP
+  egress: []
+{{- end }}
+{{- end }}

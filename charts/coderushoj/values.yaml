@@ -18,3 +18,78 @@ services:
   docs:
     name: croj-docs
     port: 80
+
+judgingServer:
+  discoveryRbac:
+    enabled: true
+    serviceAccountName: coderushoj-judging-server
+
+# The sandbox executes untrusted code. The default profile is deliberately
+# unprivileged and targets a dedicated node pool. Local Kind development uses
+# values-kind.yaml to opt into host cgroup access and privileged execution.
+sandbox:
+  # Opt in only after a tested sandbox image is available. This keeps the
+  # platform-foundation deployment from starting an application workload.
+  enabled: false
+  replicaCount: 2
+  image:
+    repository: ghcr.io/coderushoj/croj-sandbox
+    tag: "0.1.0"
+    digest: ""
+    requireDigest: false
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+  service:
+    name: croj-sandbox
+    port: 50051
+  args: []
+  env:
+    CROJ_DEBUG: "false"
+    HOME: /tmp
+    GOCACHE: /tmp/go-build-cache
+  runtimeClassName: ""
+  nodeSelector:
+    coderushoj.io/sandbox-worker: "true"
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+  podLabels: {}
+  terminationGracePeriodSeconds: 30
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  probes:
+    startup:
+      failureThreshold: 30
+      periodSeconds: 2
+    readiness:
+      failureThreshold: 3
+      periodSeconds: 5
+    liveness:
+      failureThreshold: 3
+      periodSeconds: 10
+  securityContext:
+    privileged: false
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    capabilities:
+      drop:
+        - ALL
+      add: []
+    seccompProfile:
+      type: RuntimeDefault
+  hostCgroup:
+    enabled: false
+    path: /sys/fs/cgroup
+    mountPropagation: None
+  networkPolicy:
+    enabled: true
+    judgingServerPodLabels:
+      app.kubernetes.io/name: croj-judging-server

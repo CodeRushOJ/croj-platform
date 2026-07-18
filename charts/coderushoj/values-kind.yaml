@@ -2,3 +2,26 @@ gateway:
   envoyProxy:
     enabled: true
     nodePort: 30080
+
+# DEVELOPMENT ONLY: the current sandbox cgroup implementation requires host
+# cgroup write access. Do not reuse this profile outside an isolated Kind host.
+sandbox:
+  nodeSelector:
+    coderushoj.io/sandbox-worker: null
+    coderushoj.io/judge-worker: "true"
+  securityContext:
+    privileged: true
+    allowPrivilegeEscalation: true
+    readOnlyRootFilesystem: false
+    runAsNonRoot: false
+    runAsUser: 0
+    runAsGroup: 0
+    capabilities:
+      drop: []
+      add: []
+    seccompProfile:
+      type: Unconfined
+  hostCgroup:
+    enabled: true
+    path: /sys/fs/cgroup
+    mountPropagation: Bidirectional

@@ -21,6 +21,8 @@ make smoke
 
 当前平台底座的 MySQL、Redis、RocketMQ、SeaweedFS、Gateway API 和 Envoy Gateway 已在三节点 Kind 集群通过真实冒烟测试。应用服务会继续直接在原仓库中迭代并接入版本化镜像。
 
+应用 Chart 已集成 `croj-sandbox` 的 Kubernetes-native Deployment、`croj-sandbox:50051` Service、EndpointSlice 就绪发现、gRPC 探针、专用节点、资源和网络策略。镜像完成验证前默认关闭；开发与生产安全 profile、显式启用命令和 cgroup 前置条件见 [Sandbox 部署](docs/guide/sandbox-deployment.md)。
+
 ## 项目状态
 
 - 当前平台版本：`0.1.0`
@@ -33,6 +35,15 @@ make smoke
 ```bash
 make validate
 make smoke
+```
+
+只渲染并验证 sandbox，不启动业务服务：
+
+```bash
+helm template coderushoj ./charts/coderushoj \
+  --namespace coderushoj --values ./charts/coderushoj/values-kind.yaml \
+  --set sandbox.enabled=true \
+  | kubeconform -strict -summary -ignore-missing-schemas
 ```
 
 本地密钥位于 `.workspace/secrets/`，不会写入 Git。失败诊断位于 `.workspace/diagnostics/latest/`，默认不导出 Kubernetes Secret。

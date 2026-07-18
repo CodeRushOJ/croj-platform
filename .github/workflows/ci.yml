@@ -51,6 +51,14 @@ jobs:
             | kubeconform -strict -summary -ignore-missing-schemas
           helm template coderushoj charts/coderushoj --namespace coderushoj \
             | kubeconform -strict -summary -ignore-missing-schemas
+          helm template coderushoj charts/coderushoj --namespace coderushoj \
+            --values charts/coderushoj/values-kind.yaml \
+            --set sandbox.enabled=true \
+            | kubeconform -strict -summary -ignore-missing-schemas
+          helm template coderushoj charts/coderushoj --namespace coderushoj \
+            --values charts/coderushoj/values-production.yaml \
+            --set-string sandbox.image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            | kubeconform -strict -summary -ignore-missing-schemas
 
       - name: Install Trivy
         uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1

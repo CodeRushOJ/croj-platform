@@ -8,6 +8,34 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Features
+
+- 在应用 Helm Chart 中增加可水平扩展的 `croj-sandbox` Deployment 与 ClusterIP Service，固定 `grpc` 端口名和 `50051/TCP`，与 judging-server 的 EndpointSlice 发现契约一致。
+- 增加标准 gRPC startup/readiness/liveness probes、Pod UID Downward API、专用节点选择、资源边界、无 ServiceAccount token 和默认拒绝网络出口策略。
+- 为 judging-server 增加 namespace 级 EndpointSlice 只读 ServiceAccount、Role 与 RoleBinding，避免使用 ClusterRole 或读取无关 Kubernetes 资源。
+- 提供本地 Kind 开发与生产参考两套 sandbox 安全 profile，并发布独立安装、验证和排障文档。
+
+### Security
+
+- sandbox 默认关闭，必须在镜像通过测试后显式启用；生产 profile 强制镜像 digest、隔离 `kata-qemu` RuntimeClass、非 root、只读根文件系统、删除 capabilities 且禁止宿主 cgroup 挂载。
+- `values-kind.yaml` 中的 privileged 与 Bidirectional host cgroup 挂载被明确限定为受控本地开发用途，不属于生产安全基线。
+
+### Operations
+
+- Helm 合约测试覆盖 Service/Pod selector、EndpointSlice 端口、三类 gRPC 探针、开发 cgroup 权限、生产 fail-closed 行为、禁用路径和 values schema。
+
+### Known Limitations
+
+- 当前 sandbox 执行器仍需在独立仓库通过完整 cgroup/seccomp 与对抗性测试；平台 Chart 的生产 profile 是安全部署契约，不代表执行器已完成生产认证。
+
+### Upgrade
+
+- 应用 Chart 升级到 `0.2.0` 后不会自动启动 sandbox。开发环境显式传入 `sandbox.enabled=true` 和 `values-kind.yaml`；生产还必须设置 `sandbox.image.digest` 并预装 `kata-qemu` RuntimeClass。
+
+### Rollback
+
+- 回滚到 Chart `0.1.0` 会删除 sandbox Deployment、Service 和 NetworkPolicy；正在执行的请求会中断，提交应由 judging-server 的幂等重试机制恢复。
+
 ## [0.1.0] - 2026-07-18
 
 ### Features

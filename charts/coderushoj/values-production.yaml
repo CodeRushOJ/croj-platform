@@ -1,0 +1,25 @@
+# Production reference profile. Install a compatible sandbox RuntimeClass and
+# label its isolated nodes before enabling this workload. The chart never
+# grants host cgroup access or privileged execution in this profile.
+sandbox:
+  enabled: true
+  image:
+    requireDigest: true
+  runtimeClassName: kata-qemu
+  nodeSelector:
+    coderushoj.io/sandbox-worker: "true"
+  securityContext:
+    privileged: false
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    capabilities:
+      drop:
+        - ALL
+      add: []
+    seccompProfile:
+      type: RuntimeDefault
+  hostCgroup:
+    enabled: false

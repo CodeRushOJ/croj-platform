@@ -1,0 +1,12 @@
+brew "colima"
+brew "docker"
+brew "gh"
+brew "helm"
+brew "jq"
+brew "kind"
+brew "kubeconform"
+brew "kubectl"
+brew "shellcheck"
+brew "trivy"
+brew "yq"
+

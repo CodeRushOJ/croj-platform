@@ -1,0 +1,23 @@
+{{- if .Values.gateway.envoyProxy.enabled }}
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        type: NodePort
+        patch:
+          type: StrategicMerge
+          value:
+            spec:
+              ports:
+                - name: http-80
+                  port: 80
+                  nodePort: {{ .Values.gateway.envoyProxy.nodePort }}
+{{- end }}

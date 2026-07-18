@@ -22,7 +22,7 @@ The organization retains four service repositories and adds one platform reposit
 | `croj-backend` | Spring Boot business API and background outbox publisher |
 | `croj-judging-server` | RocketMQ consumer, idempotent judge orchestration, Kubernetes Job lifecycle |
 | `croj-sandbox` | One-shot, language-aware runner used as the Kubernetes Job workload |
-| `croj-platform` | Helm charts, local cluster automation, end-to-end tests, architecture and operations documentation, release train configuration |
+| `croj-platform` | Docker Compose developer stack, Helm charts, local cluster automation, end-to-end tests, architecture and operations documentation, release train configuration |
 
 Each repository builds and tests independently. `croj-platform` pins compatible image versions and owns cross-repository integration tests.
 
@@ -163,6 +163,8 @@ A three-node Kind pipeline installs the complete chart and runs an end-to-end su
 All services expose health and Prometheus endpoints. Dashboards show HTTP latency/error rate, outbox lag, RocketMQ consumer lag, submission queue time, judge duration/verdict distribution, Kubernetes Job failures, database pool state, and object-store failures.
 
 Runbooks cover installation, upgrade, rollback, secret rotation, database backup/restore, stuck submissions, dead-letter replay, worker-node failure, and test-data recovery. Local installation is automated with idempotent scripts and Helm values rather than undocumented shell history.
+
+Docker Compose provides the shortest single-host development path for the pinned stateful dependencies. The three-node Kind and Helm path is the reference acceptance environment because it also exercises Gateway API, worker placement, Kubernetes-native Service/Endpoint discovery, and judge-job scheduling. Both paths generate local secret files and use the same dependency versions; neither requires MySQL, Redis, RocketMQ, or object storage to be installed directly on the host.
 
 ## 9. Git, Issues, and Releases
 

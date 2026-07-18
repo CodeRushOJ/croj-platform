@@ -4,9 +4,9 @@
 
 **Goal:** Establish a versioned, testable platform repository that can bootstrap the CodeRushOJ repositories, create a three-node local Kubernetes cluster, deploy pinned infrastructure, expose it through Gateway API, and produce repeatable CI and release artifacts.
 
-**Architecture:** `croj-platform` owns local developer automation, an umbrella Helm chart, Gateway API routes, seed data, smoke tests, documentation, and coordinated release metadata. Service repositories remain independent and are cloned into an ignored `.workspace/repos` directory. Local defaults fit the available 8-core/16-GiB Apple Silicon host; production values remain horizontally scalable.
+**Architecture:** `croj-platform` owns a Docker Compose developer path, local Kubernetes automation, an umbrella Helm chart, Gateway API routes, seed data, smoke tests, documentation, and coordinated release metadata. Service repositories remain independent and are cloned into an ignored `.workspace/repos` directory. Local defaults fit the available 8-core/16-GiB Apple Silicon host; production values remain horizontally scalable.
 
-**Tech Stack:** macOS/Homebrew, Colima, Docker CLI, Kubernetes 1.36, Kind, Helm 4, Gateway API 1.6, Envoy Gateway 1.8.2, MySQL 8.4.10, Redis 8.6, RocketMQ 5.5.0, SeaweedFS 4.39, Python 3 standard-library tests, GitHub Actions.
+**Tech Stack:** macOS/Homebrew, Colima, Docker CLI with Compose and Buildx, Kubernetes client 1.36.2, Kind node 1.36.1, Helm 4, Gateway API 1.5.1, Envoy Gateway 1.8.2, MySQL 8.4.10, Redis 8.6.2, RocketMQ 5.5.0, SeaweedFS 4.39, Python 3 standard-library tests, GitHub Actions.
 
 ---
 
@@ -16,6 +16,7 @@
 - `.workspace/`: ignored local clones, generated secrets, kubeconfig, and diagnostics.
 - `charts/coderushoj/`: umbrella application chart and application-facing routes.
 - `charts/coderushoj-infra/`: local infrastructure resources with pinned images and constrained defaults.
+- `compose.yaml`: pinned single-host stateful dependency stack for development.
 - `config/kind/cluster.yaml`: three-node Kind topology and host port mappings.
 - `config/versions.env`: reviewed component versions used by scripts and CI.
 - `docs/`: VitePress documentation plus architecture, deployment, operations, and release notes.
@@ -199,7 +200,7 @@ git commit -m "build: add reproducible local bootstrap"
 
 - [ ] **Step 1: Write the failing Kind topology test**
 
-The test loads `config/kind/cluster.yaml` as text and asserts one control-plane node, two worker nodes, Kubernetes image `kindest/node:v1.36.2`, host ports 8080/8443, and judge-worker labels on both workers.
+The test loads `config/kind/cluster.yaml` as text and asserts one control-plane node, two worker nodes, the digest-pinned Kubernetes image `kindest/node:v1.36.1`, host ports 8080/8443, and judge-worker labels on both workers.
 
 - [ ] **Step 2: Run it and verify failure**
 
@@ -214,7 +215,7 @@ apiVersion: kind.x-k8s.io/v1alpha4
 name: coderushoj
 nodes:
   - role: control-plane
-    image: kindest/node:v1.36.2
+    image: kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
     extraPortMappings:
       - containerPort: 30080
         hostPort: 8080
@@ -223,11 +224,11 @@ nodes:
         hostPort: 8443
         protocol: TCP
   - role: worker
-    image: kindest/node:v1.36.2
+    image: kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
     labels:
       coderushoj.io/judge-worker: "true"
   - role: worker
-    image: kindest/node:v1.36.2
+    image: kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
     labels:
       coderushoj.io/judge-worker: "true"
 ```
@@ -361,6 +362,31 @@ Expected: `platform smoke tests: PASS`.
 ```bash
 git add .gitignore scripts tests/smoke tests/contract/test_no_secrets.py
 git commit -m "feat: automate secure local platform deployment"
+```
+
+### Task 6.5: Docker Compose developer path
+
+**Files:**
+- Create: `compose.yaml`
+- Create: `config/rocketmq/broker.conf`
+- Create: `tests/contract/test_compose.py`
+- Modify: `Brewfile`
+- Modify: `Makefile`
+- Modify: `scripts/generate-secrets.sh`
+
+- [ ] **Step 1: Write failing Compose contract tests**
+
+Require pinned images, health checks, persistent volumes, loopback-only host ports, file-backed secrets, and a `--files-only` secret-generation mode. Parse the Compose model dynamically when the plugin is installed.
+
+- [ ] **Step 2: Implement and validate the developer stack**
+
+Provide MySQL, Redis, RocketMQ, and SeaweedFS with the same versions and constrained RocketMQ heap settings used by Helm. Run `make compose-up` for a health-checked start and `make compose-down` for a non-destructive stop.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add Brewfile Makefile compose.yaml config/rocketmq scripts/generate-secrets.sh tests/contract/test_compose.py
+git commit -m "feat: add Docker Compose developer stack"
 ```
 
 ### Task 7: Web documentation and operator runbooks

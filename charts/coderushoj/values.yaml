@@ -1,0 +1,20 @@
+gateway:
+  className: envoy
+  host: coderushoj.local
+  class:
+    create: true
+    controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  envoyProxy:
+    enabled: false
+    nodePort: 30080
+
+services:
+  frontend:
+    name: croj-frontend
+    port: 80
+  backend:
+    name: croj-backend
+    port: 7999
+  docs:
+    name: croj-docs
+    port: 80

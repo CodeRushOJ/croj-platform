@@ -11,6 +11,7 @@ SCRIPTS = (
     "scripts/clone-repositories.sh",
     "scripts/cluster-up.sh",
     "scripts/cluster-down.sh",
+    "scripts/install-gateway.sh",
 )
 
 

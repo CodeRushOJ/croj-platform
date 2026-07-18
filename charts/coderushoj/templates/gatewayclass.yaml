@@ -1,0 +1,11 @@
+{{- if .Values.gateway.class.create }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: {{ .Values.gateway.className }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  controllerName: {{ .Values.gateway.class.controllerName }}
+{{- end }}

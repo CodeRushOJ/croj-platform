@@ -74,6 +74,8 @@ spec:
               containerPort: {{ .Values.backend.service.containerPort }}
               protocol: TCP
           env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: {{ .Values.backend.config.springProfilesActive | quote }}
             - name: DATABASE_URL
               value: {{ .Values.backend.config.databaseUrl | quote }}
             - name: REDIS_HOST

@@ -72,6 +72,7 @@ class ApplicationRenderTest(unittest.TestCase):
             self.assertIn(f"name: {env_name}", rendered)
             self.assertIn(f"name: {SECRET_NAME}\n                  key: {key}", rendered)
         self.assertIn("name: SUBMISSION_TOPIC\n              value: \"coderushoj.submission.v1\"", rendered)
+        self.assertIn("name: SPRING_PROFILES_ACTIVE\n              value: \"prod\"", rendered)
         self.assertIn(
             "name: REDIS_HOST\n              value: \"coderushoj-infra-redis.coderushoj.svc\"",
             rendered,

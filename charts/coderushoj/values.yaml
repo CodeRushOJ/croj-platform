@@ -58,6 +58,7 @@ backend:
       smtpPassword: SMTP_PASSWORD
       judgeResultServiceToken: JUDGE_RESULT_SERVICE_TOKEN
   config:
+    springProfilesActive: prod
     databaseUrl: jdbc:mysql://coderushoj-infra-mysql.coderushoj.svc:3306/code_rush_oj?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false
     redisHost: coderushoj-infra-redis.coderushoj.svc
     redisPort: 6379

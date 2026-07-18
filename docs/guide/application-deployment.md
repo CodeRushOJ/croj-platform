@@ -73,6 +73,8 @@ unset smtp_username smtp_password s3_access_key s3_secret_key jwt_secret judge_r
 
 backend 与 judging 使用同一版本化消息主题 `coderushoj.submission.v1`；judging consumer group 是 `coderushoj-judging-v1`。judging 固定使用：
 
+backend Deployment 显式设置 `SPRING_PROFILES_ACTIVE=prod`，确保优雅停机与生产日志配置确实生效，而不是仅把 `application-prod.yml` 留在镜像中却从未激活。
+
 ```text
 BACKEND_INTERNAL_URL=http://croj-backend:7999/api
 SANDBOX_SERVICE=croj-sandbox

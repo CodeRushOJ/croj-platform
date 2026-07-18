@@ -27,6 +27,7 @@ class RepositoryContractTest(unittest.TestCase):
 
         required = {
             "KUBERNETES_VERSION",
+            "KIND_NODE_IMAGE",
             "ENVOY_GATEWAY_VERSION",
             "MYSQL_VERSION",
             "REDIS_VERSION",

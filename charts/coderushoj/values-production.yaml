@@ -1,6 +1,20 @@
-# Production reference profile. Install a compatible sandbox RuntimeClass and
-# label its isolated nodes before enabling this workload. The chart never
-# grants host cgroup access or privileged execution in this profile.
+# Production reference profile. Every workload remains disabled until its
+# immutable image digest and external Secret reference are supplied.
+backend:
+  image:
+    requireDigest: true
+  storage:
+    type: existingClaim
+    existingClaim: ""
+
+frontend:
+  image:
+    requireDigest: true
+
+judgingServer:
+  image:
+    requireDigest: true
+
 sandbox:
   # Fail closed until the executor supports a writable, delegated cgroup in
   # the selected RuntimeClass without hostPID or a host cgroup mount.

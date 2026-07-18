@@ -1,0 +1,150 @@
+{{- if .Values.judgingServer.enabled }}
+{{- if empty .Values.judgingServer.existingSecret.name }}
+{{- fail "judgingServer.existingSecret.name is required when judgingServer.enabled=true" }}
+{{- end }}
+{{- $name := "croj-judging-server" }}
+{{- $labels := dict "name" $name "root" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "coderushoj.selectorLabels" $labels | nindent 4 }}
+spec:
+  replicas: {{ .Values.judgingServer.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "coderushoj.selectorLabels" $labels | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "coderushoj.selectorLabels" $labels | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.judgingServer.discoveryRbac.serviceAccountName }}
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: {{ .Values.judgingServer.terminationGracePeriodSeconds }}
+      {{- with .Values.judgingServer.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.judgingServer.topologySpread.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.judgingServer.topologySpread.maxSkew }}
+          topologyKey: {{ .Values.judgingServer.topologySpread.topologyKey }}
+          whenUnsatisfiable: {{ .Values.judgingServer.topologySpread.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "coderushoj.selectorLabels" $labels | nindent 14 }}
+      {{- end }}
+      {{- if .Values.judgingServer.antiAffinity.enabled }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: {{ .Values.judgingServer.antiAffinity.topologyKey }}
+                labelSelector:
+                  matchLabels:
+                    {{- include "coderushoj.selectorLabels" $labels | nindent 20 }}
+      {{- end }}
+      containers:
+        - name: judging-server
+          image: {{ include "coderushoj.image" (dict "name" "judgingServer" "image" .Values.judgingServer.image) | quote }}
+          imagePullPolicy: {{ .Values.judgingServer.image.pullPolicy }}
+          {{- if .Values.judgingServer.probes.enabled }}
+          ports:
+            - name: health
+              containerPort: {{ .Values.judgingServer.probes.port }}
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.judgingServer.probes.readinessPath }}
+              port: health
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.judgingServer.probes.livenessPath }}
+              port: health
+          {{- end }}
+          env:
+            - name: DATABASE_HOST
+              value: {{ .Values.judgingServer.config.databaseHost | quote }}
+            - name: DATABASE_PORT
+              value: {{ .Values.judgingServer.config.databasePort | quote }}
+            - name: DATABASE_NAME
+              value: {{ .Values.judgingServer.config.databaseName | quote }}
+            - name: ROCKETMQ_NAME_SERVER
+              value: {{ .Values.judgingServer.config.rocketmqNameServer | quote }}
+            - name: SUBMISSION_TOPIC
+              value: {{ .Values.judgingServer.config.submissionTopic | quote }}
+            - name: ROCKETMQ_CONSUMER_GROUP
+              value: {{ .Values.judgingServer.config.consumerGroup | quote }}
+            - name: BACKEND_INTERNAL_URL
+              value: {{ .Values.judgingServer.config.backendInternalUrl | quote }}
+            - name: JUDGE_RESULT_CALLBACK_TIMEOUT
+              value: {{ .Values.judgingServer.config.callbackTimeout | quote }}
+            - name: SANDBOX_NAMESPACE
+              value: {{ .Values.judgingServer.config.sandboxNamespace | quote }}
+            - name: SANDBOX_SERVICE
+              value: {{ .Values.judgingServer.config.sandboxService | quote }}
+            - name: SANDBOX_PORT_NAME
+              value: {{ .Values.judgingServer.config.sandboxPortName | quote }}
+            - name: SANDBOX_REFRESH_INTERVAL
+              value: {{ .Values.judgingServer.config.sandboxRefreshInterval | quote }}
+            - name: SANDBOX_EXECUTE_TIMEOUT
+              value: {{ .Values.judgingServer.config.sandboxExecuteTimeout | quote }}
+            - name: SANDBOX_MAX_CONNECTIONS
+              value: {{ .Values.judgingServer.config.sandboxMaxConnections | quote }}
+            - name: SANDBOX_CONNECTION_IDLE_TTL
+              value: {{ .Values.judgingServer.config.sandboxConnectionIdleTTL | quote }}
+            - name: JUDGE_BUNDLE_CACHE_DIR
+              value: {{ .Values.judgingServer.config.bundleCacheDir | quote }}
+            - name: OBJECT_STORAGE_ENDPOINT
+              value: {{ .Values.judgingServer.config.objectStorageEndpoint | quote }}
+            - name: OBJECT_STORAGE_BUCKET
+              value: {{ .Values.judgingServer.config.objectStorageBucket | quote }}
+            - name: OBJECT_STORAGE_REGION
+              value: {{ .Values.judgingServer.config.objectStorageRegion | quote }}
+            - name: OBJECT_STORAGE_USE_TLS
+              value: {{ .Values.judgingServer.config.objectStorageUseTLS | quote }}
+            {{- $secretName := .Values.judgingServer.existingSecret.name }}
+            {{- $secretKeys := .Values.judgingServer.existingSecret.keys }}
+            {{- range $envName, $key := dict
+              "DATABASE_USERNAME" $secretKeys.databaseUsername
+              "DATABASE_PASSWORD" $secretKeys.databasePassword
+              "ROCKETMQ_ACCESS_KEY" $secretKeys.rocketmqAccessKey
+              "ROCKETMQ_SECRET_KEY" $secretKeys.rocketmqSecretKey
+              "OBJECT_STORAGE_ACCESS_KEY" $secretKeys.objectStorageAccessKey
+              "OBJECT_STORAGE_SECRET_KEY" $secretKeys.objectStorageSecretKey
+              "JUDGE_RESULT_SERVICE_TOKEN" $secretKeys.judgeResultServiceToken }}
+            - name: {{ $envName }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ $key }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.judgingServer.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.judgingServer.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: judging-tmp
+              mountPath: /tmp
+      volumes:
+        - name: judging-tmp
+          emptyDir:
+            sizeLimit: {{ .Values.judgingServer.config.bundleCacheSizeLimit }}
+{{- if .Values.judgingServer.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "coderushoj.selectorLabels" $labels | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.judgingServer.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "coderushoj.selectorLabels" $labels | nindent 6 }}
+{{- end }}
+{{- end }}

@@ -1,4 +1,4 @@
-{{- if .Values.judgingServer.discoveryRbac.enabled }}
+{{- if and .Values.judgingServer.enabled .Values.judgingServer.discoveryRbac.enabled }}
 {{- $serviceAccountName := .Values.judgingServer.discoveryRbac.serviceAccountName }}
 apiVersion: v1
 kind: ServiceAccount

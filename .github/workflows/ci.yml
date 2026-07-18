@@ -58,8 +58,27 @@ jobs:
             --set sandbox.enabled=true \
             | kubeconform -strict -summary -ignore-missing-schemas
           helm template coderushoj charts/coderushoj --namespace coderushoj \
+            --set backend.enabled=true \
+            --set frontend.enabled=true \
+            --set judgingServer.enabled=true \
+            --set backend.existingSecret.name=coderushoj-application \
+            --set judgingServer.existingSecret.name=coderushoj-application \
+            --set networkPolicy.enabled=true \
+            --set networkPolicy.external.smtpCidrs[0]=203.0.113.0/24 \
+            --set networkPolicy.external.kubernetesApiCidrs[0]=10.96.0.1/32 \
+            | kubeconform -strict -summary -ignore-missing-schemas
+          helm template coderushoj charts/coderushoj --namespace coderushoj \
             --values charts/coderushoj/values-production.yaml \
             --set sandbox.enabled=true \
+            --set backend.enabled=true \
+            --set frontend.enabled=true \
+            --set judgingServer.enabled=true \
+            --set backend.existingSecret.name=coderushoj-application \
+            --set judgingServer.existingSecret.name=coderushoj-application \
+            --set backend.storage.existingClaim=coderushoj-uploads \
+            --set-string backend.image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --set-string frontend.image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --set-string judgingServer.image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
             --set-string sandbox.image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
             | kubeconform -strict -summary -ignore-missing-schemas
 

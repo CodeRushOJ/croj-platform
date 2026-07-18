@@ -16,8 +16,8 @@ spec:
             type: PathPrefix
             value: /api
       backendRefs:
-        - name: {{ .Values.services.backend.name }}
-          port: {{ .Values.services.backend.port }}
+        - name: {{ .Values.backend.service.name }}
+          port: {{ .Values.backend.service.port }}
     - matches:
         - path:
             type: PathPrefix
@@ -30,5 +30,5 @@ spec:
             type: PathPrefix
             value: /
       backendRefs:
-        - name: {{ .Values.services.frontend.name }}
-          port: {{ .Values.services.frontend.port }}
+        - name: {{ .Values.frontend.service.name }}
+          port: {{ .Values.frontend.service.port }}

@@ -9,17 +9,242 @@ gateway:
     nodePort: 30080
 
 services:
-  frontend:
-    name: croj-frontend
-    port: 80
-  backend:
-    name: croj-backend
-    port: 7999
   docs:
     name: croj-docs
     port: 80
 
+networkPolicy:
+  # NetworkPolicy objects are opt-in. Kind's default kindnet CNI does not
+  # enforce them; use a policy-capable CNI and run isolation acceptance first.
+  enabled: false
+  gateway:
+    namespace: envoy-gateway-system
+  infra:
+    instance: coderushoj-infra
+  dns:
+    namespace: kube-system
+    podLabels:
+      k8s-app: kube-dns
+  external:
+    # Standard NetworkPolicy cannot select FQDNs. Enabling backend policy
+    # requires explicit SMTP CIDRs; enabling judging requires API Service CIDRs.
+    smtpCidrs: []
+    kubernetesApiCidrs: []
+
+backend:
+  enabled: false
+  replicaCount: 2
+  image:
+    repository: ghcr.io/coderushoj/croj-backend
+    tag: "0.1.0"
+    digest: ""
+    requireDigest: false
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+  service:
+    name: croj-backend
+    port: 7999
+    containerPort: 7999
+  existingSecret:
+    name: ""
+    keys:
+      databaseUsername: DATABASE_USERNAME
+      databasePassword: DATABASE_PASSWORD
+      redisPassword: REDIS_PASSWORD
+      rocketmqAccessKey: ROCKETMQ_ACCESS_KEY
+      rocketmqSecretKey: ROCKETMQ_SECRET_KEY
+      jwtSecret: JWT_SECRET
+      smtpUsername: SMTP_USERNAME
+      smtpPassword: SMTP_PASSWORD
+      judgeResultServiceToken: JUDGE_RESULT_SERVICE_TOKEN
+  config:
+    databaseUrl: jdbc:mysql://coderushoj-infra-mysql.coderushoj.svc:3306/code_rush_oj?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false
+    redisHost: coderushoj-infra-redis.coderushoj.svc
+    redisPort: 6379
+    rocketmqNameServer: coderushoj-infra-rocketmq-namesrv.coderushoj.svc:9876
+    submissionTopic: coderushoj.submission.v1
+    smtpHost: mail.example.invalid
+    smtpPort: 587
+    corsAllowedOrigins: https://oj.example.invalid
+    fileUploadDir: /app/uploads
+  storage:
+    type: emptyDir
+    existingClaim: ""
+    mountPath: /app/uploads
+  probes:
+    startup:
+      path: /api/actuator/health/readiness
+      failureThreshold: 30
+      periodSeconds: 5
+    readiness:
+      path: /api/actuator/health/readiness
+      failureThreshold: 3
+      periodSeconds: 10
+    liveness:
+      path: /api/actuator/health/liveness
+      failureThreshold: 3
+      periodSeconds: 10
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+  pdb:
+    enabled: true
+    minAvailable: 1
+  topologySpread:
+    enabled: true
+    maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+  antiAffinity:
+    enabled: true
+    topologyKey: kubernetes.io/hostname
+  terminationGracePeriodSeconds: 30
+
+frontend:
+  enabled: false
+  replicaCount: 2
+  image:
+    repository: ghcr.io/coderushoj/croj-frontend
+    tag: "0.1.0"
+    digest: ""
+    requireDigest: false
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+  service:
+    name: croj-frontend
+    port: 80
+    containerPort: 8080
+  probes:
+    readiness:
+      path: /healthz
+      failureThreshold: 3
+      periodSeconds: 10
+    liveness:
+      path: /healthz
+      failureThreshold: 3
+      periodSeconds: 10
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 101
+    runAsGroup: 101
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+  pdb:
+    enabled: true
+    minAvailable: 1
+  topologySpread:
+    enabled: true
+    maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+  antiAffinity:
+    enabled: true
+    topologyKey: kubernetes.io/hostname
+  terminationGracePeriodSeconds: 30
+
 judgingServer:
+  enabled: false
+  replicaCount: 2
+  image:
+    repository: ghcr.io/coderushoj/croj-judging-server
+    tag: "0.1.0"
+    digest: ""
+    requireDigest: false
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+  existingSecret:
+    name: ""
+    keys:
+      databaseUsername: DATABASE_USERNAME
+      databasePassword: DATABASE_PASSWORD
+      rocketmqAccessKey: ROCKETMQ_ACCESS_KEY
+      rocketmqSecretKey: ROCKETMQ_SECRET_KEY
+      objectStorageAccessKey: OBJECT_STORAGE_ACCESS_KEY
+      objectStorageSecretKey: OBJECT_STORAGE_SECRET_KEY
+      judgeResultServiceToken: JUDGE_RESULT_SERVICE_TOKEN
+  config:
+    databaseHost: coderushoj-infra-mysql.coderushoj.svc
+    databasePort: 3306
+    databaseName: code_rush_oj
+    rocketmqNameServer: coderushoj-infra-rocketmq-namesrv.coderushoj.svc:9876
+    submissionTopic: coderushoj.submission.v1
+    consumerGroup: coderushoj-judging-v1
+    backendInternalUrl: http://croj-backend:7999/api
+    callbackTimeout: 10s
+    sandboxNamespace: coderushoj
+    sandboxService: croj-sandbox
+    sandboxPortName: grpc
+    sandboxRefreshInterval: 5s
+    sandboxExecuteTimeout: 60s
+    sandboxMaxConnections: 128
+    sandboxConnectionIdleTTL: 5m
+    bundleCacheDir: /tmp/croj-bundles
+    bundleCacheSizeLimit: 2Gi
+    objectStorageEndpoint: coderushoj-infra-seaweedfs.coderushoj.svc:8333
+    objectStorageBucket: coderushoj-testdata
+    objectStorageRegion: us-east-1
+    objectStorageUseTLS: "false"
+  # The current distroless image has no health listener or health-check
+  # subcommand. Keep probes disabled until croj-judging-server#7 is complete.
+  probes:
+    enabled: false
+    port: 8081
+    readinessPath: /healthz/ready
+    livenessPath: /healthz/live
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+  pdb:
+    enabled: true
+    minAvailable: 1
+  topologySpread:
+    enabled: true
+    maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+  antiAffinity:
+    enabled: true
+    topologyKey: kubernetes.io/hostname
+  terminationGracePeriodSeconds: 30
   discoveryRbac:
     enabled: true
     serviceAccountName: coderushoj-judging-server
@@ -32,6 +257,7 @@ sandbox:
   # platform-foundation deployment from starting an application workload.
   enabled: false
   replicaCount: 2
+  maxConcurrency: 2
   image:
     repository: ghcr.io/coderushoj/croj-sandbox
     tag: "0.1.0"
@@ -92,6 +318,6 @@ sandbox:
     path: /sys/fs/cgroup
     mountPropagation: None
   networkPolicy:
-    enabled: true
+    enabled: false
     judgingServerPodLabels:
       app.kubernetes.io/name: croj-judging-server

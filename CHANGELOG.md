@@ -10,6 +10,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Features
 
+- 应用 Chart 增加默认关闭的 backend、frontend 与 judging-server Deployment；backend/frontend Service 固定匹配 Gateway 路由，judging 复用 namespace 级 EndpointSlice RBAC 且不暴露公网 Service。
+- 三类应用增加 tag/digest、资源、安全上下文、PDB、拓扑分散/软反亲和、外部 Secret 与版本化 RocketMQ 合同；production 开启时强制不可变 digest。
+- backend 上传目录支持开发 `emptyDir` 与 production `existingClaim` 两种显式模式，production 未提供现有 RWX PVC 时拒绝渲染。
+- judging 预留 S3 hidden bundle 配置/Secret 映射和带容量上限的 `/tmp/croj-bundles` 可重建缓存，缓存不作为持久化真相源。
+- 增加不读取/输出 Secret 值的安装前预检脚本，以及完整应用 Secret、render、安装、验证和回滚文档。
+- sandbox 增加与 2 CPU limit 对齐的 `maxConcurrency=2` Helm 参数。
 - 在应用 Helm Chart 中增加可水平扩展的 `croj-sandbox` Deployment 与 ClusterIP Service，固定 `grpc` 端口名和 `50051/TCP`，与 judging-server 的 EndpointSlice 发现契约一致。
 - 增加标准 gRPC startup/readiness/liveness probes、Pod UID Downward API、专用节点选择、资源边界、无 ServiceAccount token 和默认拒绝网络出口的 NetworkPolicy 声明。
 - 为 judging-server 增加 namespace 级 EndpointSlice 只读 ServiceAccount、Role 与 RoleBinding，避免使用 ClusterRole 或读取无关 Kubernetes 资源。
@@ -17,6 +23,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Security
 
+- backend/judging 只从用户提供的 existing Secret key 注入 MySQL、Redis、RocketMQ、JWT、SMTP 与回调 token；values、模板和示例不包含凭据，且二者固定共享 `JUDGE_RESULT_SERVICE_TOKEN` key 契约。
+- 应用 NetworkPolicy 改为显式 opt-in，避免在 kindnet 环境把“策略对象存在”误报为网络隔离生效。
 - sandbox 在默认与 production values 中都保持关闭；production 渲染强制合法 sha256 digest、隔离 `kata-qemu` RuntimeClass、非 root、只读根文件系统、删除 capabilities 且禁止宿主 cgroup 挂载，但在执行器完成 cgroup/seccomp fail-closed 加固前不能作为可运行部署。
 - `values-kind.yaml` 中的 `hostPID`、`nsenter`、privileged 与 Bidirectional host cgroup 挂载被明确限定为受控本地开发用途，不属于生产安全基线。
 - 固定 Service 名并禁止覆盖 selector 保留 label，避免 judging-server EndpointSlice 发现静默失效。
@@ -28,16 +36,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Known Limitations
 
+- backend/frontend 尚无 production Dockerfile，judging distroless 镜像尚无 Kubernetes 原生健康端点；分别由 backend#10、frontend#5 与 judging-server#7 跟踪，Helm 合同通过不代表镜像已可用。
+- backend 的 RWX PVC 只是当前文件上传兼容路径；S3 兼容对象存储由 backend#11 跟踪，production 禁止使用会随 Pod 丢失且多副本不共享的 `emptyDir`。
 - 当前 sandbox 在 child 启动前不可降级的身份/seccomp、可写 delegated cgroup 与对抗性测试方面仍未完成；production reference 默认禁用，不是 production-ready 部署。
 - Kind 默认 kindnet 不执行 NetworkPolicy，因此本地策略对象只通过 schema 验证，不能宣称网络隔离已生效；policy-capable CNI 与正反向探针由 Issue #4 跟踪。
 - judging-server 的真实 sandbox gRPC 调用、CAS 终态写回与幂等重试仍是目标态，当前不能承诺判题请求无损恢复。
 
 ### Upgrade
 
+- 应用 Chart `0.3.0` 默认不启动 backend/frontend/judging；启用前必须创建并预检 existing Secret，production 还必须提供三类 digest 与 backend RWX PVC。
 - 应用 Chart 升级到 `0.2.0` 后不会自动启动 sandbox。开发环境显式传入 `sandbox.enabled=true` 和 `values-kind.yaml`；production 保持禁用，待执行器安全门禁全部通过后才允许显式启用。
 
 ### Rollback
 
+- 回滚到 Chart `0.2.0` 会删除已显式启用的 backend/frontend/judging Deployment、Service、PDB 与 RBAC；Secret 和现有 PVC 不由 Helm 删除，回滚前必须确认数据库/schema 与消息版本兼容。
 - 回滚到 Chart `0.1.0` 会删除已经显式启用的 sandbox Deployment、Service 和 NetworkPolicy；正在执行的请求会中断，当前版本尚不能承诺由 judging-server 自动无损恢复。
 
 ## [0.1.0] - 2026-07-18

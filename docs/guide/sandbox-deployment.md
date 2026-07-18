@@ -14,7 +14,7 @@
 | 可调度条件 | Endpoint `Ready=true` 且 `Terminating!=true` |
 | 实例标识 | Downward API 将 Pod UID 注入 `CROJ_SANDBOX_INSTANCE_ID` |
 
-Service 名固定为 `croj-sandbox`，不能通过 values 改名；selector 与 Pod label 固定包含 `app.kubernetes.io/name=croj-sandbox` 和当前 Helm release 的 `app.kubernetes.io/instance`，`podLabels` 不能覆盖这两个保留键。NetworkPolicy 声明只允许带 `app.kubernetes.io/name=croj-judging-server` 的 Pod 访问 gRPC 端口，并声明 sandbox 无网络出口；只有支持并启用 NetworkPolicy 的 CNI 才会执行这些规则。sandbox 不挂载 ServiceAccount token。
+Service 名固定为 `croj-sandbox`，不能通过 values 改名；selector 与 Pod label 固定包含 `app.kubernetes.io/name=croj-sandbox` 和当前 Helm release 的 `app.kubernetes.io/instance`，`podLabels` 不能覆盖这两个保留键。设置 `sandbox.networkPolicy.enabled=true` 才会渲染只允许 `croj-judging-server` 访问 gRPC 且禁止 sandbox 出网的策略；只有支持并启用 NetworkPolicy 的 CNI 才会执行这些规则。sandbox 不挂载 ServiceAccount token。
 
 Chart 同时创建 `coderushoj-judging-server` ServiceAccount 与 namespace 级 Role/RoleBinding；唯一权限是对 `discovery.k8s.io/endpointslices` 执行 `list`，没有 Secret、Pod、Node 或集群级权限。judging-server Deployment 必须显式使用该 ServiceAccount。
 
@@ -108,6 +108,6 @@ helm template coderushoj ./charts/coderushoj \
 
 ## 容量与升级
 
-默认 2 个副本，每个副本请求 `500m CPU / 512Mi`、限制 `2 CPU / 2Gi`，临时目录使用限额 `4Gi` 的 `emptyDir`。根据并行执行模型和节点压力调整 `sandbox.replicaCount` 与 `sandbox.resources`，不要用无限资源换取吞吐量。
+默认 2 个副本，每个副本请求 `500m CPU / 512Mi`、限制 `2 CPU / 2Gi`，临时目录使用限额 `4Gi` 的 `emptyDir`。`sandbox.maxConcurrency=2` 会传给 api-server 的 `-max-concurrency` 参数，与默认 2 CPU limit 对齐；调小时可降低单 Pod 压力，调大前必须用真实编译/执行负载证明 CPU、内存与临时盘仍有界。根据并行执行模型和节点压力调整 `sandbox.replicaCount` 与 `sandbox.resources`，不要用无限资源换取吞吐量。
 
 目标滚动升级行为是 Pod 在接收终止信号后先把 gRPC health 改为 `NOT_SERVING`，Kubernetes从 EndpointSlice Ready 集合移除该实例，再等待连接优雅结束。当前尚未完成真实 judging-server → sandbox gRPC 判题与重试的端到端验收，不能据此承诺执行中的提交一定无损恢复。

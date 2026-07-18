@@ -73,6 +73,9 @@ class ScriptContractTest(unittest.TestCase):
         self.assertNotIn("| grep -Fxq submission-topic", contents)
         self.assertIn("rocketmq_topics=", contents)
         self.assertIn("running_images=", contents)
+        self.assertIn("--protocol=TCP --host=127.0.0.1", contents)
+        self.assertIn("for mysql_attempt in {1..30}", contents)
+        self.assertIn("sleep 2", contents)
 
     def test_helm_rollback_flag_supports_helm_3_and_4(self):
         lib = ROOT / "scripts/lib.sh"

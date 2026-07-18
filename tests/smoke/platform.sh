@@ -17,11 +17,20 @@ done
 kubectl rollout status deployment/coderushoj-infra-rocketmq-namesrv \
   --namespace "$namespace" --timeout=300s
 
-# Expansion is intentionally performed inside the target container.
-# shellcheck disable=SC2016
-mysql_result="$(kubectl exec --namespace "$namespace" statefulset/coderushoj-infra-mysql -- \
-  /bin/sh -ec 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --user=root --skip-column-names --execute "SELECT 1"')"
-[[ "$mysql_result" == "1" ]] || die "MySQL smoke query failed"
+mysql_result=""
+for mysql_attempt in {1..30}; do
+  # Expansion is intentionally performed inside the target container.
+  # shellcheck disable=SC2016
+  if mysql_result="$(kubectl exec --namespace "$namespace" statefulset/coderushoj-infra-mysql -- \
+    /bin/sh -ec 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --user=root --protocol=TCP --host=127.0.0.1 --skip-column-names --execute "SELECT 1"' 2>/dev/null)" \
+    && [[ "$mysql_result" == "1" ]]; then
+    break
+  fi
+  if [[ "$mysql_attempt" == "30" ]]; then
+    die "MySQL TCP smoke query failed after 30 attempts"
+  fi
+  sleep 2
+done
 
 # Expansion is intentionally performed inside the target container.
 # shellcheck disable=SC2016

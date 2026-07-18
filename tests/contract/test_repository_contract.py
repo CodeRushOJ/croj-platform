@@ -18,6 +18,10 @@ class RepositoryContractTest(unittest.TestCase):
         version = self.read_required("VERSION").strip()
         self.assertIn(f"## [{version}]", self.read_required("CHANGELOG.md"))
 
+    def test_makefile_discovers_contract_tests(self):
+        makefile = self.read_required("Makefile")
+        self.assertIn("unittest discover -s tests/contract", makefile)
+
     def test_versions_are_pinned(self):
         values = {}
         for line in self.read_required("config/versions.env").splitlines():

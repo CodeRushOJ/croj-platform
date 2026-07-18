@@ -58,6 +58,9 @@ spec:
             - mqnamesrv
           securityContext:
             {{- include "coderushoj-infra.securityContext" . | nindent 12 }}
+          env:
+            - name: HEAP_OPTS
+              value: -Xms256m -Xmx256m -Xmn128m
           ports:
             - name: namesrv
               containerPort: 9876
@@ -130,6 +133,9 @@ spec:
             - /etc/rocketmq/broker.conf
           securityContext:
             {{- include "coderushoj-infra.securityContext" . | nindent 12 }}
+          env:
+            - name: HEAP_OPTS
+              value: -Xms512m -Xmx512m -Xmn256m -XX:MaxDirectMemorySize=256m
           ports:
             - name: broker
               containerPort: 10911

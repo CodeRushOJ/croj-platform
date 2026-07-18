@@ -1,7 +1,7 @@
 .PHONY: test lint validate bootstrap cluster-up cluster-down deploy smoke diagnostics
 
 test:
-	python3 -m unittest discover -s tests -p 'test_*.py' -v
+	python3 -m unittest discover -s tests/contract -p 'test_*.py' -v
 
 lint:
 	shellcheck scripts/*.sh

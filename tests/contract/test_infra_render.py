@@ -44,6 +44,8 @@ class InfrastructureRenderTest(unittest.TestCase):
         self.assertGreaterEqual(rendered.count("volumeClaimTemplates:"), 4)
         self.assertGreaterEqual(rendered.count("readinessProbe:"), 5)
         self.assertGreaterEqual(rendered.count("resources:"), 5)
+        self.assertIn("-Xms512m -Xmx512m", rendered)
+        self.assertIn("-XX:MaxDirectMemorySize=256m", rendered)
 
     def test_security_and_secret_contracts(self):
         rendered = self.render()

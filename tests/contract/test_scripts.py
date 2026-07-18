@@ -12,6 +12,10 @@ SCRIPTS = (
     "scripts/cluster-up.sh",
     "scripts/cluster-down.sh",
     "scripts/install-gateway.sh",
+    "scripts/generate-secrets.sh",
+    "scripts/diagnostics.sh",
+    "scripts/deploy.sh",
+    "tests/smoke/platform.sh",
 )
 
 

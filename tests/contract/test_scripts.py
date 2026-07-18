@@ -9,6 +9,8 @@ SCRIPTS = (
     "scripts/lib.sh",
     "scripts/bootstrap.sh",
     "scripts/clone-repositories.sh",
+    "scripts/cluster-up.sh",
+    "scripts/cluster-down.sh",
 )
 
 
@@ -53,6 +55,12 @@ class ScriptContractTest(unittest.TestCase):
     def test_bootstrap_avoids_implicit_homebrew_updates(self):
         contents = (ROOT / "scripts/bootstrap.sh").read_text()
         self.assertIn("HOMEBREW_NO_AUTO_UPDATE=1 brew bundle", contents)
+
+    def test_cluster_up_configures_vm_dns(self):
+        contents = (ROOT / "scripts/cluster-up.sh").read_text()
+        self.assertIn('--dns "$dns_primary" --dns "$dns_secondary"', contents)
+        self.assertIn("/run/systemd/resolve/stub-resolv.conf", contents)
+        self.assertIn("colima ssh", contents)
 
     @unittest.skipUnless(shutil.which("shellcheck"), "ShellCheck is not installed")
     def test_shellcheck_has_no_findings(self):

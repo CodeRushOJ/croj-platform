@@ -1,5 +1,7 @@
 brew "colima"
 brew "docker"
+brew "docker-buildx"
+brew "docker-compose"
 brew "gh"
 brew "helm"
 brew "jq"
@@ -9,4 +11,3 @@ brew "kubectl"
 brew "shellcheck"
 brew "trivy"
 brew "yq"
-

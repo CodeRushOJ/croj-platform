@@ -1,0 +1,132 @@
+name: coderushoj
+
+services:
+  mysql:
+    image: mysql:8.4.10
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: code_rush_oj
+      MYSQL_USER_FILE: /run/secrets/mysql_username
+      MYSQL_PASSWORD_FILE: /run/secrets/mysql_password
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root_password
+    secrets:
+      - mysql_username
+      - mysql_password
+      - mysql_root_password
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$(cat /run/secrets/mysql_root_password) mysqladmin ping --host=127.0.0.1 --user=root --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    networks:
+      - platform
+
+  redis:
+    image: redis:8.6.2-alpine
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - exec redis-server --appendonly yes --requirepass "$$(cat /run/secrets/redis_password)"
+    secrets:
+      - redis_password
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$(cat /run/secrets/redis_password) redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - platform
+
+  rocketmq-namesrv:
+    image: apache/rocketmq:5.5.0
+    restart: unless-stopped
+    command: ["nameserver"]
+    environment:
+      HEAP_OPTS: -Xms256m -Xmx256m -Xmn128m
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/9876'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      - platform
+
+  rocketmq-broker:
+    image: apache/rocketmq:5.5.0
+    restart: unless-stopped
+    command: ["broker", "-n", "rocketmq-namesrv:9876", "-c", "/etc/rocketmq/broker.conf"]
+    environment:
+      HEAP_OPTS: -Xms512m -Xmx512m -Xmn256m -XX:MaxDirectMemorySize=256m
+    depends_on:
+      rocketmq-namesrv:
+        condition: service_healthy
+    volumes:
+      - ./config/rocketmq/broker.conf:/etc/rocketmq/broker.conf:ro
+      - rocketmq-data:/home/rocketmq/store
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/10911'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    networks:
+      - platform
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.39
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        export AWS_ACCESS_KEY_ID="$$(cat /run/secrets/s3_access_key)"
+        export AWS_SECRET_ACCESS_KEY="$$(cat /run/secrets/s3_secret_key)"
+        export S3_BUCKET=coderushoj-testdata
+        exec /usr/bin/weed mini -dir=/data
+    secrets:
+      - s3_access_key
+      - s3_secret_key
+    ports:
+      - "127.0.0.1:8333:8333"
+    volumes:
+      - seaweedfs-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --output-document=- http://127.0.0.1:9333/cluster/status >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    networks:
+      - platform
+
+secrets:
+  mysql_username:
+    file: ./.workspace/secrets/mysql-username
+  mysql_password:
+    file: ./.workspace/secrets/mysql-password
+  mysql_root_password:
+    file: ./.workspace/secrets/mysql-root-password
+  redis_password:
+    file: ./.workspace/secrets/redis-password
+  s3_access_key:
+    file: ./.workspace/secrets/s3-access-key
+  s3_secret_key:
+    file: ./.workspace/secrets/s3-secret-key
+
+volumes:
+  mysql-data:
+  redis-data:
+  rocketmq-data:
+  seaweedfs-data:
+
+networks:
+  platform:
+    driver: bridge

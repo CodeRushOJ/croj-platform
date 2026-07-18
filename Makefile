@@ -1,4 +1,4 @@
-.PHONY: test lint validate bootstrap cluster-up cluster-down deploy smoke diagnostics
+.PHONY: test lint validate bootstrap cluster-up cluster-down deploy smoke diagnostics compose-up compose-down
 
 test:
 	python3 -m unittest discover -s tests/contract -p 'test_*.py' -v
@@ -27,3 +27,10 @@ smoke:
 
 diagnostics:
 	./scripts/diagnostics.sh
+
+compose-up:
+	./scripts/generate-secrets.sh --files-only
+	docker compose up --detach --wait
+
+compose-down:
+	docker compose down

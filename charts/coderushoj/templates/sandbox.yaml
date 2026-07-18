@@ -82,10 +82,11 @@ spec:
           command:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.sandbox.args }}
           args:
+            {{- with .Values.sandbox.args }}
             {{- toYaml . | nindent 12 }}
-          {{- end }}
+            {{- end }}
+            - {{ printf "-max-concurrency=%d" (int .Values.sandbox.maxConcurrency) }}
           ports:
             - name: grpc
               containerPort: {{ .Values.sandbox.service.port }}

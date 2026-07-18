@@ -11,6 +11,7 @@ CodeRushOJ Platform 是现有 CodeRushOJ 多仓库项目的部署、集成测试
 ## 快速开始
 
 完整安装、升级、回滚和故障处理请阅读[快速开始](docs/guide/quickstart.md)。
+应用服务的 Secret、镜像 digest、存储与 Helm 安装流程见[应用服务部署](docs/guide/application-deployment.md)。
 
 ```bash
 make bootstrap
@@ -20,6 +21,10 @@ make smoke
 ```
 
 当前平台底座的 MySQL、Redis、RocketMQ、SeaweedFS、Gateway API 和 Envoy Gateway 已在三节点 Kind 集群通过真实冒烟测试。应用服务会继续直接在原仓库中迭代并接入版本化镜像。
+
+应用 Chart 已提供默认关闭的 `croj-backend`、`croj-frontend` 和 `croj-judging-server` Deployment 合同，包括固定 Gateway Service、外部 Secret、资源/探针、安全上下文、PDB、拓扑分散以及 judging EndpointSlice RBAC。当前 backend/frontend 仓库尚未提供生产 Dockerfile，judging 原生健康端点也仍在开发，因此本轮只保证 Helm 离线渲染与 schema/kubeconform 验证，不声称三类镜像已全部可直接构建上线。
+
+题库导入计划采用 [Free Problem Set](https://github.com/zhblue/freeproblemset/tree/master) 的 LGPL-3.0 XML 交换格式，由 [backend Issue #12](https://github.com/CodeRushOJ/croj-backend/issues/12) 跟踪。当前不要手工直灌数据库；后续实现会提供 dry-run、许可来源 provenance、安全 XML 解析与受校验 bundle 流程。
 
 应用 Chart 已集成 `croj-sandbox` 的 Kubernetes-native Deployment、`croj-sandbox:50051` Service、EndpointSlice 就绪发现、gRPC 探针、专用节点、资源和 NetworkPolicy 声明。开发与 production values 均默认关闭；Kind 的 `hostPID/nsenter/privileged` 风险、kindnet 不执行策略、production cgroup/seccomp 阻塞项见 [Sandbox 部署](docs/guide/sandbox-deployment.md)。
 

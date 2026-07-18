@@ -16,6 +16,7 @@ SCRIPTS = (
     "scripts/generate-secrets.sh",
     "scripts/diagnostics.sh",
     "scripts/deploy.sh",
+    "scripts/preflight-application-secrets.sh",
     "tests/smoke/platform.sh",
 )
 
@@ -98,6 +99,46 @@ class ScriptContractTest(unittest.TestCase):
         deploy = (ROOT / "scripts/deploy.sh").read_text()
         self.assertIn("helm_rollback_flag", deploy)
         self.assertNotIn("  --rollback-on-failure \\\n", deploy)
+
+    def test_application_secret_preflight_has_an_offline_dry_run(self):
+        script = (ROOT / "scripts/preflight-application-secrets.sh").read_text()
+        self.assertIn("--required-key", script)
+        self.assertIn("kubectl get secret", script)
+        self.assertNotIn("helm lookup", script)
+        self.assertNotRegex(script, r"printf.*secret_value")
+
+    def test_application_secret_preflight_rejects_a_missing_key_without_printing_values(self):
+        script = ROOT / "scripts/preflight-application-secrets.sh"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_kubectl = pathlib.Path(temp_dir) / "kubectl"
+            fake_kubectl.write_text(
+                "#!/usr/bin/env bash\n"
+                "if [[ \"$*\" == *'.data.MISSING_KEY'* ]]; then exit 0; fi\n"
+                "printf 'do-not-print-this-base64-value'\n"
+            )
+            fake_kubectl.chmod(0o755)
+            result = subprocess.run(
+                [
+                    "bash",
+                    str(script),
+                    "--namespace",
+                    "coderushoj",
+                    "--secret",
+                    "coderushoj-application",
+                    "--required-key",
+                    "DATABASE_PASSWORD",
+                    "--required-key",
+                    "MISSING_KEY",
+                ],
+                env={"PATH": f"{temp_dir}:/usr/bin:/bin"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("MISSING_KEY", result.stderr)
+        self.assertNotIn("do-not-print-this-base64-value", result.stdout + result.stderr)
 
     @unittest.skipUnless(shutil.which("shellcheck"), "ShellCheck is not installed")
     def test_shellcheck_has_no_findings(self):

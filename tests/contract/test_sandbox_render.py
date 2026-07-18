@@ -36,12 +36,21 @@ class SandboxRenderTest(unittest.TestCase):
         self.assertEqual(3, rendered.count("grpc:\n              port: 50051"))
         self.assertIn("fieldPath: metadata.uid", rendered)
         self.assertIn("name: CROJ_SANDBOX_INSTANCE_ID", rendered)
+        self.assertIn("- -max-concurrency=2", rendered)
         self.assertIn('coderushoj.io/sandbox-worker: "true"', rendered)
         self.assertIn("automountServiceAccountToken: false", rendered)
         self.assertIn("privileged: false", rendered)
         self.assertIn("allowPrivilegeEscalation: false", rendered)
         self.assertIn("runAsNonRoot: true", rendered)
         self.assertNotIn("hostPath:", rendered)
+        self.assertNotIn("kind: NetworkPolicy\nmetadata:\n  name: croj-sandbox", rendered)
+
+    def test_sandbox_network_policy_is_opt_in(self):
+        rendered = self.render(
+            "--set", "sandbox.enabled=true",
+            "--set", "sandbox.networkPolicy.enabled=true",
+        )
+
         self.assertIn("kind: NetworkPolicy\nmetadata:\n  name: croj-sandbox", rendered)
         self.assertIn("app.kubernetes.io/name: croj-judging-server", rendered)
         self.assertIn("policyTypes:\n    - Ingress\n    - Egress", rendered)
@@ -64,6 +73,29 @@ class SandboxRenderTest(unittest.TestCase):
         self.assertIn("command:\n            - /usr/bin/nsenter", rendered)
         for argument in ("--cgroup=/proc/1/ns/cgroup", "--", "/app/api-server"):
             self.assertIn(f"- {argument}", rendered)
+        self.assertIn("- -max-concurrency=2", rendered)
+
+    def test_sandbox_concurrency_must_be_positive(self):
+        result = subprocess.run(
+            [
+                "helm",
+                "template",
+                "coderushoj",
+                str(CHART),
+                "--namespace",
+                "coderushoj",
+                "--set",
+                "sandbox.enabled=true",
+                "--set",
+                "sandbox.maxConcurrency=0",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("minimum: got 0, want 1", result.stderr)
 
     def test_production_profile_requires_an_isolated_runtime(self):
         digest = "sha256:" + ("a" * 64)
@@ -191,7 +223,10 @@ class SandboxRenderTest(unittest.TestCase):
         self.assertNotIn("name: croj-sandbox", rendered)
 
     def test_discovery_rbac_is_namespace_scoped_and_read_only(self):
-        rendered = self.render()
+        rendered = self.render(
+            "--set", "judgingServer.enabled=true",
+            "--set", "judgingServer.existingSecret.name=coderushoj-application",
+        )
 
         self.assertIn("kind: ServiceAccount\nmetadata:\n  name: coderushoj-judging-server", rendered)
         self.assertIn("kind: Role\nmetadata:\n  name: coderushoj-judging-server-endpointslices", rendered)

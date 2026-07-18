@@ -1,0 +1,180 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- if and .Values.backend.enabled (eq (len .Values.networkPolicy.external.smtpCidrs) 0) }}
+{{- fail "networkPolicy.external.smtpCidrs requires at least one explicit CIDR when backend and NetworkPolicy are enabled" }}
+{{- end }}
+{{- if and .Values.judgingServer.enabled (eq (len .Values.networkPolicy.external.kubernetesApiCidrs) 0) }}
+{{- fail "networkPolicy.external.kubernetesApiCidrs requires at least one explicit CIDR when judgingServer and NetworkPolicy are enabled" }}
+{{- end }}
+{{- if .Values.frontend.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: croj-frontend
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: croj-frontend
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.gateway.namespace }}
+          podSelector:
+            matchLabels:
+              gateway.envoyproxy.io/owning-gateway-name: {{ .Release.Name }}
+              gateway.envoyproxy.io/owning-gateway-namespace: {{ .Release.Namespace }}
+      ports:
+        - port: {{ .Values.frontend.service.containerPort }}
+          protocol: TCP
+  egress: []
+{{- end }}
+{{- if .Values.backend.enabled }}
+{{- if .Values.frontend.enabled }}
+---
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: croj-backend
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: croj-backend
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.gateway.namespace }}
+          podSelector:
+            matchLabels:
+              gateway.envoyproxy.io/owning-gateway-name: {{ .Release.Name }}
+              gateway.envoyproxy.io/owning-gateway-namespace: {{ .Release.Namespace }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: croj-judging-server
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - port: {{ .Values.backend.service.containerPort }}
+          protocol: TCP
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Values.networkPolicy.infra.instance }}
+              app.kubernetes.io/component: mysql
+      ports: [{port: 3306, protocol: TCP}]
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Values.networkPolicy.infra.instance }}
+              app.kubernetes.io/component: redis
+      ports: [{port: 6379, protocol: TCP}]
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Values.networkPolicy.infra.instance }}
+              app.kubernetes.io/component: rocketmq-namesrv
+      ports: [{port: 9876, protocol: TCP}]
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Values.networkPolicy.infra.instance }}
+              app.kubernetes.io/component: rocketmq-broker
+      ports:
+        - {port: 10911, protocol: TCP}
+        - {port: 10909, protocol: TCP}
+    - to:
+        {{- range .Values.networkPolicy.external.smtpCidrs }}
+        - ipBlock:
+            cidr: {{ . }}
+        {{- end }}
+      ports:
+        - port: {{ .Values.backend.config.smtpPort }}
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.dns.namespace }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.dns.podLabels | nindent 14 }}
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+{{- end }}
+{{- if .Values.judgingServer.enabled }}
+{{- if or .Values.frontend.enabled .Values.backend.enabled }}
+---
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: croj-judging-server
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: croj-judging-server
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Values.networkPolicy.infra.instance }}
+              app.kubernetes.io/component: mysql
+      ports: [{port: 3306, protocol: TCP}]
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Values.networkPolicy.infra.instance }}
+              app.kubernetes.io/component: rocketmq-namesrv
+      ports: [{port: 9876, protocol: TCP}]
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Values.networkPolicy.infra.instance }}
+              app.kubernetes.io/component: rocketmq-broker
+      ports:
+        - {port: 10911, protocol: TCP}
+        - {port: 10909, protocol: TCP}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Values.networkPolicy.infra.instance }}
+              app.kubernetes.io/component: seaweedfs
+      ports: [{port: 8333, protocol: TCP}]
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: croj-backend
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports: [{port: {{ .Values.backend.service.containerPort }}, protocol: TCP}]
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: croj-sandbox
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports: [{port: {{ .Values.sandbox.service.port }}, protocol: TCP}]
+    - to:
+        {{- range .Values.networkPolicy.external.kubernetesApiCidrs }}
+        - ipBlock:
+            cidr: {{ . }}
+        {{- end }}
+      ports: [{port: 443, protocol: TCP}]
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.dns.namespace }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.dns.podLabels | nindent 14 }}
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+{{- end }}
+{{- end }}

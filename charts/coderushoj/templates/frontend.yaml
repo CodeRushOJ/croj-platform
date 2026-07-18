@@ -1,0 +1,114 @@
+{{- if .Values.frontend.enabled }}
+{{- $name := .Values.frontend.service.name }}
+{{- $labels := dict "name" $name "root" . }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "coderushoj.selectorLabels" $labels | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "coderushoj.selectorLabels" $labels | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.frontend.service.port }}
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "coderushoj.selectorLabels" $labels | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "coderushoj.selectorLabels" $labels | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "coderushoj.selectorLabels" $labels | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.frontend.terminationGracePeriodSeconds }}
+      {{- with .Values.frontend.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.frontend.topologySpread.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.frontend.topologySpread.maxSkew }}
+          topologyKey: {{ .Values.frontend.topologySpread.topologyKey }}
+          whenUnsatisfiable: {{ .Values.frontend.topologySpread.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "coderushoj.selectorLabels" $labels | nindent 14 }}
+      {{- end }}
+      {{- if .Values.frontend.antiAffinity.enabled }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: {{ .Values.frontend.antiAffinity.topologyKey }}
+                labelSelector:
+                  matchLabels:
+                    {{- include "coderushoj.selectorLabels" $labels | nindent 20 }}
+      {{- end }}
+      containers:
+        - name: frontend
+          image: {{ include "coderushoj.image" (dict "name" "frontend" "image" .Values.frontend.image) | quote }}
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.frontend.service.containerPort }}
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.frontend.probes.readiness.path }}
+              port: http
+            failureThreshold: {{ .Values.frontend.probes.readiness.failureThreshold }}
+            periodSeconds: {{ .Values.frontend.probes.readiness.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.frontend.probes.liveness.path }}
+              port: http
+            failureThreshold: {{ .Values.frontend.probes.liveness.failureThreshold }}
+            periodSeconds: {{ .Values.frontend.probes.liveness.periodSeconds }}
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.frontend.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: frontend-tmp
+              mountPath: /tmp
+            - name: frontend-cache
+              mountPath: /var/cache/nginx
+            - name: frontend-run
+              mountPath: /var/run
+      volumes:
+        - name: frontend-tmp
+          emptyDir: {}
+        - name: frontend-cache
+          emptyDir: {}
+        - name: frontend-run
+          emptyDir: {}
+{{- if .Values.frontend.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "coderushoj.selectorLabels" $labels | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.frontend.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "coderushoj.selectorLabels" $labels | nindent 6 }}
+{{- end }}
+{{- end }}

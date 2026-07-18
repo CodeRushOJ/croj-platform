@@ -63,6 +63,8 @@ make compose-down
 
 Kind/Helm 路径要求 Linux cgroup v2；macOS 通过 Colima VM 提供 Linux 内核。平台底座部署不会默认启动 sandbox。要运行不可信代码，还需要构建 `croj-sandbox` 镜像，并按 [Sandbox Kubernetes 部署](./sandbox-deployment.md) 选择本地开发或生产隔离 profile。
 
+`croj-backend`、`croj-frontend` 与 `croj-judging-server` 同样默认关闭。它们的外部 Secret、不可变镜像、持久卷、预检、安装和回滚流程见[应用服务部署](./application-deployment.md)。
+
 一条完整的本地部署链路：
 
 ```bash

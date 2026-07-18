@@ -25,6 +25,7 @@ export default withMermaid({
         items: [
           { text: '平台概览', link: '/' },
           { text: '安装与部署', link: '/guide/quickstart' },
+          { text: '应用服务部署', link: '/guide/application-deployment' },
           { text: 'Sandbox 部署', link: '/guide/sandbox-deployment' }
         ]
       },

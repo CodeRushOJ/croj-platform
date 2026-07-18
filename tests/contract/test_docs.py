@@ -12,6 +12,7 @@ class DocumentationContractTest(unittest.TestCase):
         required = (
             "index.md",
             "guide/quickstart.md",
+            "guide/application-deployment.md",
             "guide/sandbox-deployment.md",
             "architecture/platform.md",
             "operations/troubleshooting.md",
@@ -25,6 +26,7 @@ class DocumentationContractTest(unittest.TestCase):
         config = (DOCS / ".vitepress/config.mts").read_text()
         for path in (
             "/guide/quickstart",
+            "/guide/application-deployment",
             "/guide/sandbox-deployment",
             "/architecture/platform",
             "/operations/troubleshooting",
@@ -86,6 +88,34 @@ class DocumentationContractTest(unittest.TestCase):
         self.assertIn("docs/guide/quickstart.md", readme)
         self.assertIn("croj-frontend", readme)
         self.assertIn("croj-backend", readme)
+        self.assertIn("docs/guide/application-deployment.md", readme)
+
+    def test_application_deployment_is_copy_safe_and_fail_closed(self):
+        deployment = (DOCS / "guide/application-deployment.md").read_text()
+        for contract in (
+            "kubectl create secret generic",
+            "preflight-application-secrets.sh",
+            "backend.existingSecret.name",
+            "judgingServer.existingSecret.name",
+            "JUDGE_RESULT_SERVICE_TOKEN",
+            "backend.storage.existingClaim",
+            "ReadWriteMany",
+            "backend.image.digest",
+            "frontend.image.digest",
+            "judgingServer.image.digest",
+            "BACKEND_INTERNAL_URL",
+            "croj-sandbox",
+            "kindnet",
+            "croj-backend/issues/10",
+            "croj-frontend/issues/5",
+            "croj-judging-server/issues/7",
+            "zhblue/freeproblemset",
+            "croj-backend/issues/12",
+            "LGPL-3.0",
+            "不要手工直灌",
+        ):
+            self.assertIn(contract, deployment)
+        self.assertNotIn("replace-with-real-password", deployment)
 
     def test_sandbox_deployment_documents_security_profiles_and_discovery(self):
         deployment = (DOCS / "guide/sandbox-deployment.md").read_text()
@@ -107,6 +137,7 @@ class DocumentationContractTest(unittest.TestCase):
             "kindnet",
             "enabled=false",
             "seccomp",
+            "maxConcurrency",
         ):
             self.assertIn(contract, deployment)
 

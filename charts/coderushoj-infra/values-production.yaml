@@ -1,0 +1,51 @@
+# This profile is production-shaped but intentionally remains single-node.
+# Use managed/HA MySQL, Redis, RocketMQ, and object storage for real production.
+secrets:
+  name: coderushoj-production-secrets
+
+mysql:
+  storage: 100Gi
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+redis:
+  storage: 20Gi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+rocketmq:
+  storage: 100Gi
+  nameserverResources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  brokerResources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+seaweedfs:
+  storage: 200Gi
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: coderushoj-infra
+description: Pinned stateful dependencies for CodeRushOJ
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

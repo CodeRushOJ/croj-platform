@@ -5,12 +5,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
-require_command kubectl
 require_command openssl
 
-readonly namespace="${1:-coderushoj}"
+readonly target="${1:-coderushoj}"
 readonly secret_name="${CODERUSHOJ_SECRET_NAME:-coderushoj-local-secrets}"
 readonly secret_dir="$CODERUSHOJ_ROOT/.workspace/secrets"
+
+if [[ "$target" != "--files-only" ]]; then
+  require_command kubectl
+fi
 
 write_random_secret() {
   local path="$1"
@@ -38,11 +41,16 @@ write_random_secret "$secret_dir/redis-password" 24
 write_random_secret "$secret_dir/s3-access-key" 12
 write_random_secret "$secret_dir/s3-secret-key" 32
 
-kubectl create namespace "$namespace" --dry-run=client --output=yaml \
+if [[ "$target" == "--files-only" ]]; then
+  log "local secret files are ready in $secret_dir"
+  exit 0
+fi
+
+kubectl create namespace "$target" --dry-run=client --output=yaml \
   | kubectl apply --filename - >/dev/null
 
 kubectl create secret generic "$secret_name" \
-  --namespace "$namespace" \
+  --namespace "$target" \
   --from-file=mysql-username="$secret_dir/mysql-username" \
   --from-file=mysql-password="$secret_dir/mysql-password" \
   --from-file=mysql-root-password="$secret_dir/mysql-root-password" \
@@ -53,4 +61,4 @@ kubectl create secret generic "$secret_name" \
   --output=yaml \
   | kubectl apply --filename - >/dev/null
 
-log "local Kubernetes secret $namespace/$secret_name is ready"
+log "local Kubernetes secret $target/$secret_name is ready"

@@ -42,6 +42,8 @@ sandbox:
   service:
     name: croj-sandbox
     port: 50051
+  hostPID: false
+  command: []
   args: []
   env:
     CROJ_DEBUG: "false"

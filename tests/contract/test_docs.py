@@ -102,6 +102,11 @@ class DocumentationContractTest(unittest.TestCase):
             "kata-qemu",
             "sandbox.image.digest",
             "privileged",
+            "hostPID",
+            "/usr/bin/nsenter",
+            "kindnet",
+            "enabled=false",
+            "seccomp",
         ):
             self.assertIn(contract, deployment)
 

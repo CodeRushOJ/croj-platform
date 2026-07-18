@@ -60,12 +60,18 @@ class SandboxRenderTest(unittest.TestCase):
         self.assertIn("hostPath:\n            path: /sys/fs/cgroup", rendered)
         self.assertIn("mountPath: /sys/fs/cgroup", rendered)
         self.assertIn("mountPropagation: Bidirectional", rendered)
+        self.assertIn("hostPID: true", rendered)
+        self.assertIn("command:\n            - /usr/bin/nsenter", rendered)
+        for argument in ("--cgroup=/proc/1/ns/cgroup", "--", "/app/api-server"):
+            self.assertIn(f"- {argument}", rendered)
 
     def test_production_profile_requires_an_isolated_runtime(self):
         digest = "sha256:" + ("a" * 64)
         rendered = self.render(
             "--values",
             str(CHART / "values-production.yaml"),
+            "--set",
+            "sandbox.enabled=true",
             "--set-string",
             f"sandbox.image.digest={digest}",
         )
@@ -75,6 +81,7 @@ class SandboxRenderTest(unittest.TestCase):
         self.assertIn("privileged: false", rendered)
         self.assertIn("readOnlyRootFilesystem: true", rendered)
         self.assertIn("runAsUser: 65532", rendered)
+        self.assertIn("hostPID: false", rendered)
         self.assertIn(f"image: \"ghcr.io/coderushoj/croj-sandbox@{digest}\"", rendered)
         self.assertNotIn("hostPath:", rendered)
 
@@ -89,6 +96,8 @@ class SandboxRenderTest(unittest.TestCase):
                 "coderushoj",
                 "--values",
                 str(CHART / "values-production.yaml"),
+                "--set",
+                "sandbox.enabled=true",
             ],
             text=True,
             capture_output=True,
@@ -97,6 +106,84 @@ class SandboxRenderTest(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("sandbox.image.digest is required", result.stderr)
+
+    def test_production_profile_is_disabled_by_default(self):
+        rendered = self.render("--values", str(CHART / "values-production.yaml"))
+
+        self.assertNotIn("name: croj-sandbox", rendered)
+
+    def test_rejects_malformed_or_short_image_digests(self):
+        for digest in ("sha256:abc", "sha512:" + ("a" * 64), "sha256:" + ("G" * 64)):
+            with self.subTest(digest=digest):
+                result = subprocess.run(
+                    [
+                        "helm",
+                        "template",
+                        "coderushoj",
+                        str(CHART),
+                        "--namespace",
+                        "coderushoj",
+                        "--values",
+                        str(CHART / "values-production.yaml"),
+                        "--set",
+                        "sandbox.enabled=true",
+                        "--set-string",
+                        f"sandbox.image.digest={digest}",
+                    ],
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("does not match pattern '^(|sha256:[0-9a-f]{64})$'", result.stderr)
+
+    def test_rejects_a_service_name_that_breaks_judging_discovery(self):
+        result = subprocess.run(
+            [
+                "helm",
+                "template",
+                "coderushoj",
+                str(CHART),
+                "--namespace",
+                "coderushoj",
+                "--set",
+                "sandbox.enabled=true",
+                "--set",
+                "sandbox.service.name=renamed-sandbox",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("croj-sandbox", result.stderr)
+
+    def test_rejects_reserved_selector_label_overrides(self):
+        for label in ("app.kubernetes.io/name", "app.kubernetes.io/instance"):
+            with self.subTest(label=label):
+                escaped_label = label.replace(".", "\\.")
+                result = subprocess.run(
+                    [
+                        "helm",
+                        "template",
+                        "coderushoj",
+                        str(CHART),
+                        "--namespace",
+                        "coderushoj",
+                        "--set",
+                        "sandbox.enabled=true",
+                        "--set-string",
+                        f"sandbox.podLabels.{escaped_label}=override",
+                    ],
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("reserved selector label", result.stderr)
 
     def test_sandbox_can_be_disabled_without_dangling_service(self):
         rendered = self.render("--set", "sandbox.enabled=false")

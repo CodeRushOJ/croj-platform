@@ -4,7 +4,7 @@ CodeRushOJ Platform 是现有 CodeRushOJ 多仓库项目的部署、集成测试
 
 - `croj-frontend`：Vue 3 用户端、管理端、竞赛与社区界面
 - `croj-backend`：Spring Boot 业务 API 与持久化
-- `croj-judging-server`：Go 判题编排与 Kubernetes Job 生命周期
+- `croj-judging-server`：Go 判题编排与 Kubernetes EndpointSlice 发现
 - `croj-sandbox`：Go 多语言隔离执行器
 - `croj-platform`：本仓库，负责 Docker Compose、Helm、Kind、文档和跨仓库验收
 
@@ -21,7 +21,7 @@ make smoke
 
 当前平台底座的 MySQL、Redis、RocketMQ、SeaweedFS、Gateway API 和 Envoy Gateway 已在三节点 Kind 集群通过真实冒烟测试。应用服务会继续直接在原仓库中迭代并接入版本化镜像。
 
-应用 Chart 已集成 `croj-sandbox` 的 Kubernetes-native Deployment、`croj-sandbox:50051` Service、EndpointSlice 就绪发现、gRPC 探针、专用节点、资源和网络策略。镜像完成验证前默认关闭；开发与生产安全 profile、显式启用命令和 cgroup 前置条件见 [Sandbox 部署](docs/guide/sandbox-deployment.md)。
+应用 Chart 已集成 `croj-sandbox` 的 Kubernetes-native Deployment、`croj-sandbox:50051` Service、EndpointSlice 就绪发现、gRPC 探针、专用节点、资源和 NetworkPolicy 声明。开发与 production values 均默认关闭；Kind 的 `hostPID/nsenter/privileged` 风险、kindnet 不执行策略、production cgroup/seccomp 阻塞项见 [Sandbox 部署](docs/guide/sandbox-deployment.md)。
 
 ## 项目状态
 

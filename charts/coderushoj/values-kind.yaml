@@ -6,6 +6,13 @@ gateway:
 # DEVELOPMENT ONLY: the current sandbox cgroup implementation requires host
 # cgroup write access. Do not reuse this profile outside an isolated Kind host.
 sandbox:
+  hostPID: true
+  command:
+    - /usr/bin/nsenter
+  args:
+    - --cgroup=/proc/1/ns/cgroup
+    - --
+    - /app/api-server
   nodeSelector:
     coderushoj.io/sandbox-worker: null
     coderushoj.io/judge-worker: "true"

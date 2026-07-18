@@ -89,7 +89,9 @@ kubectl auth can-i list endpointslices.discovery.k8s.io \
 - `Pending` 且 RuntimeClass 不存在：安装并验证 `kata-qemu`，不要改用 privileged 绕过。
 - `Ready=False`：查看启动自检日志，确认五语言工具链、`/tmp` 和 cgroup 委派可用。
 - judging-server 报 `no ready sandbox endpoints`：Service 必须名为 `croj-sandbox`，端口必须名为 `grpc`，且 EndpointSlice 地址为 Ready、非 Terminating。
-- 本地 cgroup permission denied：只在隔离 Kind VM 中使用 `values-kind.yaml`；生产环境应修复 RuntimeClass/节点委派，而不是挂载宿主 cgroup。
+- 本地 cgroup permission denied：确认 `values-kind.yaml` 已渲染 `hostPID: true`，入口为 `/usr/bin/nsenter --cgroup=/proc/1/ns/cgroup -- /app/api-server`，并且 host cgroup mount 为 Bidirectional；这些设置只能用于隔离 Kind VM。
+- 已创建 NetworkPolicy 但仍能访问外网：Kind 默认 kindnet 不执行 NetworkPolicy，这是当前已知限制，不是策略已生效；见平台 Issue #4。不要在该集群放置生产凭据或可达生产网络。
+- production profile：当前默认禁用且缺少经验证的 writable delegated cgroup；不要通过 privileged 或 hostPID 绕过，等待执行器 seccomp/cgroup fail-closed 门禁完成。
 
 ## 一键重试前
 

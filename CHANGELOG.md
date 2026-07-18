@@ -11,30 +11,34 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Features
 
 - 在应用 Helm Chart 中增加可水平扩展的 `croj-sandbox` Deployment 与 ClusterIP Service，固定 `grpc` 端口名和 `50051/TCP`，与 judging-server 的 EndpointSlice 发现契约一致。
-- 增加标准 gRPC startup/readiness/liveness probes、Pod UID Downward API、专用节点选择、资源边界、无 ServiceAccount token 和默认拒绝网络出口策略。
+- 增加标准 gRPC startup/readiness/liveness probes、Pod UID Downward API、专用节点选择、资源边界、无 ServiceAccount token 和默认拒绝网络出口的 NetworkPolicy 声明。
 - 为 judging-server 增加 namespace 级 EndpointSlice 只读 ServiceAccount、Role 与 RoleBinding，避免使用 ClusterRole 或读取无关 Kubernetes 资源。
-- 提供本地 Kind 开发与生产参考两套 sandbox 安全 profile，并发布独立安装、验证和排障文档。
+- 提供本地 Kind 高权限开发 profile 与默认禁用的 production fail-closed 参考 profile，并发布独立安装、验证和排障文档。
 
 ### Security
 
-- sandbox 默认关闭，必须在镜像通过测试后显式启用；生产 profile 强制镜像 digest、隔离 `kata-qemu` RuntimeClass、非 root、只读根文件系统、删除 capabilities 且禁止宿主 cgroup 挂载。
-- `values-kind.yaml` 中的 privileged 与 Bidirectional host cgroup 挂载被明确限定为受控本地开发用途，不属于生产安全基线。
+- sandbox 在默认与 production values 中都保持关闭；production 渲染强制合法 sha256 digest、隔离 `kata-qemu` RuntimeClass、非 root、只读根文件系统、删除 capabilities 且禁止宿主 cgroup 挂载，但在执行器完成 cgroup/seccomp fail-closed 加固前不能作为可运行部署。
+- `values-kind.yaml` 中的 `hostPID`、`nsenter`、privileged 与 Bidirectional host cgroup 挂载被明确限定为受控本地开发用途，不属于生产安全基线。
+- 固定 Service 名并禁止覆盖 selector 保留 label，避免 judging-server EndpointSlice 发现静默失效。
 
 ### Operations
 
 - Helm 合约测试覆盖 Service/Pod selector、EndpointSlice 端口、三类 gRPC 探针、开发 cgroup 权限、生产 fail-closed 行为、禁用路径和 values schema。
+- 部署脚本根据 Helm 3/4 自动选择 `--atomic` 或 `--rollback-on-failure`；CI 显式传播 Go 工具安装目录。
 
 ### Known Limitations
 
-- 当前 sandbox 执行器仍需在独立仓库通过完整 cgroup/seccomp 与对抗性测试；平台 Chart 的生产 profile 是安全部署契约，不代表执行器已完成生产认证。
+- 当前 sandbox 在 child 启动前不可降级的身份/seccomp、可写 delegated cgroup 与对抗性测试方面仍未完成；production reference 默认禁用，不是 production-ready 部署。
+- Kind 默认 kindnet 不执行 NetworkPolicy，因此本地策略对象只通过 schema 验证，不能宣称网络隔离已生效；policy-capable CNI 与正反向探针由 Issue #4 跟踪。
+- judging-server 的真实 sandbox gRPC 调用、CAS 终态写回与幂等重试仍是目标态，当前不能承诺判题请求无损恢复。
 
 ### Upgrade
 
-- 应用 Chart 升级到 `0.2.0` 后不会自动启动 sandbox。开发环境显式传入 `sandbox.enabled=true` 和 `values-kind.yaml`；生产还必须设置 `sandbox.image.digest` 并预装 `kata-qemu` RuntimeClass。
+- 应用 Chart 升级到 `0.2.0` 后不会自动启动 sandbox。开发环境显式传入 `sandbox.enabled=true` 和 `values-kind.yaml`；production 保持禁用，待执行器安全门禁全部通过后才允许显式启用。
 
 ### Rollback
 
-- 回滚到 Chart `0.1.0` 会删除 sandbox Deployment、Service 和 NetworkPolicy；正在执行的请求会中断，提交应由 judging-server 的幂等重试机制恢复。
+- 回滚到 Chart `0.1.0` 会删除已经显式启用的 sandbox Deployment、Service 和 NetworkPolicy；正在执行的请求会中断，当前版本尚不能承诺由 judging-server 自动无损恢复。
 
 ## [0.1.0] - 2026-07-18
 

@@ -9,6 +9,8 @@ require_command helm
 require_command kubectl
 
 readonly namespace="coderushoj"
+helm_rollback_option="$(helm_rollback_flag)"
+readonly helm_rollback_option
 
 deployment_failed() {
   "$SCRIPT_DIR/diagnostics.sh" "$namespace" || true
@@ -23,7 +25,7 @@ log "installing pinned stateful dependencies"
 helm upgrade --install coderushoj-infra "$CODERUSHOJ_ROOT/charts/coderushoj-infra" \
   --namespace "$namespace" \
   --create-namespace \
-  --rollback-on-failure \
+  "$helm_rollback_option" \
   --wait \
   --timeout 12m
 
@@ -31,7 +33,7 @@ log "installing CodeRushOJ routes"
 helm upgrade --install coderushoj "$CODERUSHOJ_ROOT/charts/coderushoj" \
   --namespace "$namespace" \
   --values "$CODERUSHOJ_ROOT/charts/coderushoj/values-kind.yaml" \
-  --rollback-on-failure \
+  "$helm_rollback_option" \
   --wait \
   --timeout 5m
 

@@ -14,7 +14,7 @@
           "properties": {
             "repository": { "type": "string", "minLength": 1 },
             "tag": { "type": "string", "minLength": 1 },
-            "digest": { "type": "string" },
+            "digest": { "type": "string", "pattern": "^(|sha256:[0-9a-f]{64})$" },
             "requireDigest": { "type": "boolean" },
             "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
           }
@@ -23,11 +23,14 @@
           "type": "object",
           "required": ["name", "port"],
           "properties": {
-            "name": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" },
+            "name": { "type": "string", "enum": ["croj-sandbox"] },
             "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
           }
         },
         "runtimeClassName": { "type": "string" },
+        "hostPID": { "type": "boolean" },
+        "command": { "type": "array", "items": { "type": "string" } },
+        "args": { "type": "array", "items": { "type": "string" } },
         "nodeSelector": {
           "type": "object",
           "additionalProperties": { "type": "string" }

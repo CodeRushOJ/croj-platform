@@ -2,6 +2,15 @@
 {{- if and .Values.sandbox.image.requireDigest (empty .Values.sandbox.image.digest) }}
 {{- fail "sandbox.image.digest is required when sandbox.image.requireDigest=true" }}
 {{- end }}
+{{- if and (not (empty .Values.sandbox.image.digest)) (not (regexMatch "^sha256:[0-9a-f]{64}$" .Values.sandbox.image.digest)) }}
+{{- fail "sandbox.image.digest must match ^sha256:[0-9a-f]{64}$" }}
+{{- end }}
+{{- if ne .Values.sandbox.service.name "croj-sandbox" }}
+{{- fail "sandbox.service.name must remain croj-sandbox to preserve the judging-server discovery contract" }}
+{{- end }}
+{{- if or (hasKey .Values.sandbox.podLabels "app.kubernetes.io/name") (hasKey .Values.sandbox.podLabels "app.kubernetes.io/instance") }}
+{{- fail "sandbox.podLabels cannot override reserved selector labels app.kubernetes.io/name or app.kubernetes.io/instance" }}
+{{- end }}
 {{- $sandboxName := .Values.sandbox.service.name }}
 {{- $selectorLabels := dict "app.kubernetes.io/name" $sandboxName "app.kubernetes.io/instance" .Release.Name }}
 apiVersion: v1
@@ -44,6 +53,7 @@ spec:
       {{- end }}
     spec:
       automountServiceAccountToken: false
+      hostPID: {{ .Values.sandbox.hostPID }}
       terminationGracePeriodSeconds: {{ .Values.sandbox.terminationGracePeriodSeconds }}
       {{- with .Values.sandbox.imagePullSecrets }}
       imagePullSecrets:
@@ -68,6 +78,10 @@ spec:
         - name: sandbox
           image: "{{ .Values.sandbox.image.repository }}{{- with .Values.sandbox.image.digest }}@{{ . }}{{- else }}:{{ $.Values.sandbox.image.tag }}{{- end }}"
           imagePullPolicy: {{ .Values.sandbox.image.pullPolicy }}
+          {{- with .Values.sandbox.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- with .Values.sandbox.args }}
           args:
             {{- toYaml . | nindent 12 }}

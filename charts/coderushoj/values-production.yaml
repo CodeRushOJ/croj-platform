@@ -2,7 +2,9 @@
 # label its isolated nodes before enabling this workload. The chart never
 # grants host cgroup access or privileged execution in this profile.
 sandbox:
-  enabled: true
+  # Fail closed until the executor supports a writable, delegated cgroup in
+  # the selected RuntimeClass without hostPID or a host cgroup mount.
+  enabled: false
   image:
     requireDigest: true
   runtimeClassName: kata-qemu

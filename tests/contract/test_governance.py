@@ -88,6 +88,7 @@ class GovernanceContractTest(unittest.TestCase):
         ):
             self.assertIn(command, workflow)
         self.assertIn("upload-artifact", workflow)
+        self.assertGreaterEqual(workflow.count("GITHUB_PATH"), 2)
 
     def test_release_is_tag_gated_version_checked_and_immutable(self):
         workflow = self.read(".github/workflows/release.yml")

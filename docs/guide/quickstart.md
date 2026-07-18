@@ -113,14 +113,20 @@ curl -H 'Host: coderushoj.local' http://127.0.0.1:8080/
 
 ## 升级
 
-先备份，再渲染检查差异，最后原子升级：
+先备份，再渲染检查差异，最后原子升级。`scripts/deploy.sh` 会自动为 Helm 3 选择 `--atomic`、为 Helm 4 选择 `--rollback-on-failure`；手动执行时使用同一判断：
 
 ```bash
+case "$(helm version --template '{{.Version}}')" in
+  v3.*) coderushoj_rollback_flag=--atomic ;;
+  v4.*) coderushoj_rollback_flag=--rollback-on-failure ;;
+  *) echo "unsupported Helm version" >&2; exit 1 ;;
+esac
+
 helm upgrade coderushoj-infra ./charts/coderushoj-infra \
-  --namespace coderushoj --rollback-on-failure --wait --timeout 12m
+  --namespace coderushoj "$coderushoj_rollback_flag" --wait --timeout 12m
 helm upgrade coderushoj ./charts/coderushoj \
   --namespace coderushoj --values ./charts/coderushoj/values-kind.yaml \
-  --rollback-on-failure --wait --timeout 5m
+  "$coderushoj_rollback_flag" --wait --timeout 5m
 make smoke
 ```
 

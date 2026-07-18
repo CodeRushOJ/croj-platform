@@ -1,6 +1,7 @@
 import pathlib
 import shutil
 import subprocess
+import tempfile
 import unittest
 
 
@@ -72,6 +73,28 @@ class ScriptContractTest(unittest.TestCase):
         self.assertNotIn("| grep -Fxq submission-topic", contents)
         self.assertIn("rocketmq_topics=", contents)
         self.assertIn("running_images=", contents)
+
+    def test_helm_rollback_flag_supports_helm_3_and_4(self):
+        lib = ROOT / "scripts/lib.sh"
+        for version, expected in (("v3.19.0", "--atomic"), ("v4.2.3", "--rollback-on-failure")):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as temp_dir:
+                fake_helm = pathlib.Path(temp_dir) / "helm"
+                fake_helm.write_text(f'#!/usr/bin/env bash\nprintf \'{version}\\n\'\n')
+                fake_helm.chmod(0o755)
+                result = subprocess.run(
+                    ["bash", "-c", f'source "{lib}"; helm_rollback_flag'],
+                    env={"PATH": f"{temp_dir}:/usr/bin:/bin"},
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(expected, result.stdout.strip())
+
+    def test_deploy_uses_version_aware_helm_rollback_flag(self):
+        deploy = (ROOT / "scripts/deploy.sh").read_text()
+        self.assertIn("helm_rollback_flag", deploy)
+        self.assertNotIn("  --rollback-on-failure \\\n", deploy)
 
     @unittest.skipUnless(shutil.which("shellcheck"), "ShellCheck is not installed")
     def test_shellcheck_has_no_findings(self):

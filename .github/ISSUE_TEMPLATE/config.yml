@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security Policy / 安全报告
+    url: https://github.com/CodeRushOJ/croj-platform/security/advisories/new
+    about: 请通过私密 Security Advisory 报告可被利用的漏洞，不要创建公开 Issue。
+  - name: Deployment documentation / 部署文档
+    url: https://github.com/CodeRushOJ/croj-platform/blob/main/docs/guide/quickstart.md
+    about: 创建部署问题前，请先检查安装步骤与故障排查手册。

@@ -16,3 +16,5 @@
 - Rollback
 
 正式标签只能在 `make validate`、干净集群部署、`make smoke`、升级/回滚和备份恢复演练全部通过后创建。部署清单禁止使用 `latest`。
+
+详细门禁、必需的 release note 章节和签名标签命令见[发版流程](/project/release-process)，跨仓库交付顺序见[里程碑与 Issue 管理](/project/milestones)。

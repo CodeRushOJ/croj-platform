@@ -4,7 +4,7 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY . .
-RUN CODERUSHOJ_DOCS_LAST_UPDATED=false pnpm build
+RUN CODERUSHOJ_DOCS_LAST_UPDATED=false CODERUSHOJ_DOCS_BASE=/ pnpm build
 
 FROM nginxinc/nginx-unprivileged:1.29.4-alpine@sha256:a6c4f61f456b85b8fdf7ec7ab28cc3e299440e6fb4a9dea520e5fd8fd440025e
 COPY --from=build /workspace/docs/.vitepress/dist /usr/share/nginx/html

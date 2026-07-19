@@ -1,4 +1,5 @@
 import pathlib
+import re
 import subprocess
 import unittest
 
@@ -19,6 +20,7 @@ class DocumentationContractTest(unittest.TestCase):
             "operations/backup-restore.md",
             "releases/index.md",
             "project/history.md",
+            "guide/github-pages.md",
         )
         for relative_path in required:
             self.assertTrue((DOCS / relative_path).is_file(), f"missing docs page: {relative_path}")
@@ -30,10 +32,54 @@ class DocumentationContractTest(unittest.TestCase):
             "/guide/sandbox-deployment",
             "/architecture/platform",
             "/operations/troubleshooting",
+            "/guide/github-pages",
         ):
             self.assertIn(path, config)
         self.assertIn("withMermaid", config)
         self.assertIn("superpowers/**", config)
+
+    def test_docs_default_to_project_pages_and_allow_custom_domain_base(self):
+        config = (DOCS / ".vitepress/config.mts").read_text()
+        self.assertIn("CODERUSHOJ_DOCS_BASE", config)
+        self.assertIn("'/croj-platform/'", config)
+        self.assertIn("base: docsBase", config)
+        self.assertIn("startsWith('/')", config)
+        self.assertIn("endsWith('/')", config)
+
+        pages_guide = (DOCS / "guide/github-pages.md").read_text()
+        for contract in (
+            "https://coderushoj.github.io/croj-platform/",
+            "CODERUSHOJ_DOCS_BASE",
+            "Settings → Pages",
+            "GitHub Actions",
+            "Kubernetes Gateway",
+        ):
+            self.assertIn(contract, pages_guide)
+
+    def test_pages_workflow_builds_pull_requests_and_deploys_only_trusted_refs(self):
+        workflow = (ROOT / ".github/workflows/pages.yml").read_text()
+        for trigger in ("pull_request:", "branches: [main]", "workflow_dispatch:"):
+            self.assertIn(trigger, workflow)
+        self.assertNotIn("pull_request_target", workflow)
+
+        for action in (
+            "actions/checkout",
+            "actions/setup-node",
+            "actions/configure-pages",
+            "actions/upload-pages-artifact",
+            "actions/deploy-pages",
+        ):
+            self.assertRegex(workflow, rf"uses: {re.escape(action)}@[0-9a-f]{{40}}")
+
+        self.assertIn("contents: read", workflow)
+        self.assertIn("pages: write", workflow)
+        self.assertIn("id-token: write", workflow)
+        self.assertIn("name: github-pages", workflow)
+        self.assertIn("url: ${{ steps.deployment.outputs.page_url }}", workflow)
+        self.assertIn("github.event_name != 'pull_request'", workflow)
+        self.assertIn("CODERUSHOJ_DOCS_BASE", workflow)
+        self.assertIn("/croj-platform/", workflow)
+        self.assertIn("path: docs/.vitepress/dist", workflow)
 
     def test_quickstart_has_docker_and_kubernetes_paths(self):
         quickstart = (DOCS / "guide/quickstart.md").read_text()
@@ -73,6 +119,7 @@ class DocumentationContractTest(unittest.TestCase):
         self.assertIn("pnpm build", dockerfile)
         self.assertIn("pnpm-workspace.yaml", dockerfile)
         self.assertIn("CODERUSHOJ_DOCS_LAST_UPDATED=false", dockerfile)
+        self.assertIn("CODERUSHOJ_DOCS_BASE=/", dockerfile)
         self.assertGreaterEqual(dockerfile.count("@sha256:"), 2)
         self.assertIn("USER 101:101", dockerfile)
         self.assertIn("HEALTHCHECK", dockerfile)

@@ -12,6 +12,7 @@ CodeRushOJ Platform 是现有 CodeRushOJ 多仓库项目的部署、集成测试
 
 完整安装、升级、回滚和故障处理请阅读[快速开始](docs/guide/quickstart.md)。
 应用服务的 Secret、镜像 digest、存储与 Helm 安装流程见[应用服务部署](docs/guide/application-deployment.md)。
+公开文档通过 [GitHub Pages](https://coderushoj.github.io/croj-platform/) 发布；首次启用、自定义域名和回滚步骤见 [Pages 发布指南](docs/guide/github-pages.md)。Pages 仅承载静态文档，真实 OJ 仍由 Kubernetes Gateway 提供。
 
 ```bash
 make bootstrap

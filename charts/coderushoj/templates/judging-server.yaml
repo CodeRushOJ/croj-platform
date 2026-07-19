@@ -98,6 +98,24 @@ spec:
               value: {{ .Values.judgingServer.config.sandboxConnectionIdleTTL | quote }}
             - name: JUDGE_BUNDLE_CACHE_DIR
               value: {{ .Values.judgingServer.config.bundleCacheDir | quote }}
+            - name: JUDGE_BUNDLE_CACHE_MAX_BYTES
+              value: {{ .Values.judgingServer.config.bundleCacheMaxBytes | int64 | quote }}
+            - name: JUDGE_BUNDLE_CACHE_TTL
+              value: {{ .Values.judgingServer.config.bundleCacheTTL | quote }}
+            - name: JUDGE_BUNDLE_MAX_OBJECT_BYTES
+              value: {{ .Values.judgingServer.config.bundleMaxObjectBytes | int64 | quote }}
+            - name: JUDGE_BUNDLE_MAX_FILES
+              value: {{ .Values.judgingServer.config.bundleMaxFiles | int64 | quote }}
+            - name: JUDGE_BUNDLE_MAX_MANIFEST_BYTES
+              value: {{ .Values.judgingServer.config.bundleMaxManifestBytes | int64 | quote }}
+            - name: JUDGE_BUNDLE_MAX_CASE_BYTES
+              value: {{ .Values.judgingServer.config.bundleMaxCaseBytes | int64 | quote }}
+            - name: JUDGE_BUNDLE_MAX_UNCOMPRESSED_BYTES
+              value: {{ .Values.judgingServer.config.bundleMaxUncompressedBytes | int64 | quote }}
+            - name: JUDGE_BUNDLE_MAX_COMPRESSION_RATIO
+              value: {{ .Values.judgingServer.config.bundleMaxCompressionRatio | int64 | quote }}
+            - name: JUDGE_BUNDLE_MAX_INFRA_ATTEMPTS
+              value: {{ .Values.judgingServer.config.bundleMaxInfraAttempts | int64 | quote }}
             - name: OBJECT_STORAGE_ENDPOINT
               value: {{ .Values.judgingServer.config.objectStorageEndpoint | quote }}
             - name: OBJECT_STORAGE_BUCKET

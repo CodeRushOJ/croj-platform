@@ -22,7 +22,7 @@ make smoke
 
 当前平台底座的 MySQL、Redis、RocketMQ、SeaweedFS、Gateway API 和 Envoy Gateway 已在三节点 Kind 集群通过真实冒烟测试。应用服务会继续直接在原仓库中迭代并接入版本化镜像。
 
-应用 Chart 已提供默认关闭的 `croj-backend`、`croj-frontend` 和 `croj-judging-server` Deployment 合同，包括固定 Gateway Service、外部 Secret、资源/探针、安全上下文、PDB、拓扑分散以及 judging EndpointSlice RBAC。当前 backend/frontend 仓库尚未提供生产 Dockerfile，judging 原生健康端点也仍在开发，因此本轮只保证 Helm 离线渲染与 schema/kubeconform 验证，不声称三类镜像已全部可直接构建上线。
+应用 Chart 已提供默认关闭的 `croj-backend`、`croj-frontend` 和 `croj-judging-server` Deployment 合同，包括固定 Gateway Service、外部 Secret、资源/探针、安全上下文、PDB、拓扑分散以及 judging EndpointSlice RBAC。backend 与 frontend 的 production Dockerfile、non-root/read-only 合同正在 [backend PR #16](https://github.com/CodeRushOJ/croj-backend/pull/16) 和 [frontend PR #10](https://github.com/CodeRushOJ/croj-frontend/pull/10) 审核；judging 原生健康端点仍在开发。在对应 PR 合并并发布不可变 digest 前，本轮只保证 Helm 离线渲染与 schema/kubeconform 验证，不声称三类镜像已全部可直接上线。
 
 题库导入计划采用 [Free Problem Set](https://github.com/zhblue/freeproblemset/tree/master) 的 LGPL-3.0 XML 交换格式，由 [backend Issue #12](https://github.com/CodeRushOJ/croj-backend/issues/12) 跟踪。当前不要手工直灌数据库；后续实现会提供 dry-run、许可来源 provenance、安全 XML 解析与受校验 bundle 流程。
 

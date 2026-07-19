@@ -14,6 +14,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - 三类应用增加 tag/digest、资源、安全上下文、PDB、拓扑分散/软反亲和、外部 Secret 与版本化 RocketMQ 合同；production 开启时强制不可变 digest。
 - backend 上传目录支持开发 `emptyDir` 与 production `existingClaim` 两种显式模式，production 未提供现有 RWX PVC 时拒绝渲染。
 - judging 预留 S3 hidden bundle 配置/Secret 映射和带容量上限的 `/tmp/croj-bundles` 可重建缓存，缓存不作为持久化真相源。
+- judging hidden bundle 合同补齐缓存容量/TTL、压缩包与解压边界、zip bomb 比率和基础设施重试次数共 10 项 `JUDGE_BUNDLE_*` 环境变量，并通过 schema 拒绝非正数限制。
 - 增加不读取/输出 Secret 值的安装前预检脚本，以及完整应用 Secret、render、安装、验证和回滚文档。
 - sandbox 增加与 2 CPU limit 对齐的 `maxConcurrency=2` Helm 参数。
 - 在应用 Helm Chart 中增加可水平扩展的 `croj-sandbox` Deployment 与 ClusterIP Service，固定 `grpc` 端口名和 `50051/TCP`，与 judging-server 的 EndpointSlice 发现契约一致。
@@ -36,7 +37,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Known Limitations
 
-- backend/frontend 尚无 production Dockerfile，judging distroless 镜像尚无 Kubernetes 原生健康端点；分别由 backend#10、frontend#5 与 judging-server#7 跟踪，Helm 合同通过不代表镜像已可用。
+- backend/frontend production Dockerfile 已分别进入 backend PR #16 与 frontend PR #10 审核，但尚未合并发布不可变 digest；judging distroless 镜像仍无 Kubernetes 原生健康端点。对应工作由 backend#10、frontend#5 与 judging-server#7 跟踪，Helm 合同通过不代表镜像已发布可用。
 - backend 的 RWX PVC 只是当前文件上传兼容路径；S3 兼容对象存储由 backend#11 跟踪，production 禁止使用会随 Pod 丢失且多副本不共享的 `emptyDir`。
 - 当前 sandbox 在 child 启动前不可降级的身份/seccomp、可写 delegated cgroup 与对抗性测试方面仍未完成；production reference 默认禁用，不是 production-ready 部署。
 - Kind 默认 kindnet 不执行 NetworkPolicy，因此本地策略对象只通过 schema 验证，不能宣称网络隔离已生效；policy-capable CNI 与正反向探针由 Issue #4 跟踪。

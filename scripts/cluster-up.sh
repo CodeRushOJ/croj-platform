@@ -64,5 +64,8 @@ node_count="$(kubectl get nodes --no-headers | wc -l | tr -d ' ')"
 judge_worker_count="$(kubectl get nodes -l coderushoj.io/judge-worker=true --no-headers | wc -l | tr -d ' ')"
 [[ "$judge_worker_count" == "2" ]] || die "expected 2 judge workers, found $judge_worker_count"
 
+sandbox_worker_count="$(kubectl get nodes -l coderushoj.io/sandbox=true --no-headers | wc -l | tr -d ' ')"
+[[ "$sandbox_worker_count" == "2" ]] || die "expected 2 sandbox workers, found $sandbox_worker_count"
+
 trap - ERR
 log "cluster $CLUSTER_NAME is ready"

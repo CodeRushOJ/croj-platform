@@ -5,7 +5,9 @@ metadata:
   labels:
     {{- include "coderushoj-infra.labels" . | nindent 4 }}
 spec:
-  podSelector: {}
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
   policyTypes:
     - Ingress
     - Egress
@@ -13,26 +15,71 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "coderushoj-infra.fullname" . }}-allow-platform
+  name: {{ include "coderushoj-infra.fullname" . }}-allow-infra-internal
   labels:
     {{- include "coderushoj-infra.labels" . | nindent 4 }}
 spec:
-  podSelector: {}
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [mysql, redis, rocketmq-namesrv, rocketmq-broker, rocketmq-topic-bootstrap, seaweedfs]
   policyTypes:
     - Ingress
     - Egress
   ingress:
     - from:
-        - podSelector: {}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [mysql, redis, rocketmq-namesrv, rocketmq-broker, rocketmq-topic-bootstrap, seaweedfs]
   egress:
     - to:
-        - podSelector: {}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [mysql, redis, rocketmq-namesrv, rocketmq-broker, rocketmq-topic-bootstrap, seaweedfs]
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: kube-system
       ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "coderushoj-infra.fullname" . }}-allow-applications
+  labels:
+    {{- include "coderushoj-infra.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Values.applications.instanceLabel }}
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [backend, judging-server]
+      ports:
+        - {protocol: TCP, port: 3306}
+        - {protocol: TCP, port: 6379}
+        - {protocol: TCP, port: 8333}
+        - {protocol: TCP, port: 9876}
+        - {protocol: TCP, port: 10911}
+        - {protocol: TCP, port: 1025}

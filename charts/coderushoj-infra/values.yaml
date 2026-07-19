@@ -1,6 +1,20 @@
 secrets:
   name: coderushoj-local-secrets
 
+applications:
+  instanceLabel: coderushoj
+
+mailpit:
+  enabled: true
+  image: axllent/mailpit:v1.30.0
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
 mysql:
   image: mysql:8.4.10
   database: code_rush_oj

@@ -3,6 +3,9 @@
 secrets:
   name: coderushoj-production-secrets
 
+mailpit:
+  enabled: false
+
 mysql:
   storage: 100Gi
   resources:

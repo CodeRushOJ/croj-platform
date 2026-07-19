@@ -35,6 +35,7 @@ class InfrastructureRenderTest(unittest.TestCase):
             "redis:8.6.2-alpine",
             "apache/rocketmq:5.5.0",
             "chrislusf/seaweedfs:4.39",
+            "axllent/mailpit:v1.30.0",
         ):
             self.assertIn(f"image: {image}", rendered)
         self.assertNotRegex(rendered, r"image:\s+\S+:latest(?:\s|$)")
@@ -46,6 +47,8 @@ class InfrastructureRenderTest(unittest.TestCase):
         self.assertGreaterEqual(rendered.count("resources:"), 5)
         self.assertIn("-Xms512m -Xmx512m", rendered)
         self.assertIn("-XX:MaxDirectMemorySize=256m", rendered)
+        self.assertIn("app.kubernetes.io/component: mailpit", rendered)
+        self.assertIn("port: 1025", rendered)
 
     def test_security_and_secret_contracts(self):
         rendered = self.render()
@@ -55,6 +58,8 @@ class InfrastructureRenderTest(unittest.TestCase):
         self.assertGreaterEqual(rendered.count("seccompProfile:"), 5)
         self.assertIn("kind: NetworkPolicy", rendered)
         self.assertIn("policyTypes:\n    - Ingress\n    - Egress", rendered)
+        self.assertNotIn("podSelector: {}", rendered)
+        self.assertIn("values: [backend, judging-server]", rendered)
 
         self.assertNotIn("password: coderushoj", rendered.lower())
         for key in ("mysql-root-password", "redis-password", "s3-access-key", "s3-secret-key"):
@@ -71,6 +76,7 @@ class InfrastructureRenderTest(unittest.TestCase):
         rendered = self.render("--values", str(CHART / "values-production.yaml"))
         self.assertIn("coderushoj-production-secrets", rendered)
         self.assertNotIn("kind: Secret", rendered)
+        self.assertNotIn("axllent/mailpit", rendered)
 
 
 if __name__ == "__main__":

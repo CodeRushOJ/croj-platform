@@ -28,6 +28,20 @@ class SecretSafetyTest(unittest.TestCase):
         self.assertIn("--dry-run=client", contents)
         self.assertNotRegex(contents, r"echo\s+\$\{?(?:MYSQL|REDIS|S3)_")
 
+    def test_secret_generator_covers_application_runtime_keys(self):
+        contents = (ROOT / "scripts/generate-secrets.sh").read_text()
+        for key in (
+            "jwt-secret",
+            "judge-result-service-token",
+            "external-api-auth-pepper-base64",
+            "external-idempotency-pepper-base64",
+            "external-cursor-key-base64",
+            "external-source-key-base64",
+            "smtp-password",
+        ):
+            self.assertIn(key, contents)
+        self.assertIn("openssl rand -base64", contents)
+
     def test_tracked_files_have_no_private_keys_or_jwts(self):
         result = subprocess.run(
             ["git", "ls-files"],

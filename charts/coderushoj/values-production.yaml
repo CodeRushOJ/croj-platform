@@ -1,0 +1,44 @@
+gateway:
+  host: oj.example.com
+  docsHost: docs.oj.example.com
+  judgeHost: judge.oj.example.com
+  class:
+    create: false
+  tls:
+    enabled: true
+    secretName: coderushoj-web-tls
+
+deploymentProfile: production
+
+applications:
+  enabled: true
+
+secrets:
+  name: coderushoj-production-secrets
+
+images:
+  frontend:
+    tag: ""
+    digest: ""
+  backend:
+    tag: ""
+    digest: ""
+  judgingServer:
+    tag: ""
+    digest: ""
+  sandbox:
+    tag: ""
+    digest: ""
+  docs:
+    tag: ""
+    digest: ""
+
+backend:
+  corsAllowedOrigins: https://oj.example.com
+  smtp:
+    host: ""
+    port: 465
+    username: ""
+    auth: true
+    startTLS: false
+    ssl: true

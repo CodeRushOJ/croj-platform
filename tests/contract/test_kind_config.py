@@ -21,6 +21,7 @@ class KindConfigContractTest(unittest.TestCase):
         self.assertIn("hostPort: 8080", contents)
         self.assertIn("hostPort: 8443", contents)
         self.assertEqual(2, contents.count("coderushoj.io/judge-worker"))
+        self.assertEqual(2, contents.count("coderushoj.io/sandbox"))
 
 
 if __name__ == "__main__":

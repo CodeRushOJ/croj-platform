@@ -10,6 +10,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Features
 
+- 增加跨仓库 `source-lock.json`，用五个官方仓库的 40 位 Git commit、构建路径和精确开发镜像名建立可审计的镜像输入。
+- 增加 commit-addressed checkout、五镜像 Buildx 构建和显式 Kind image load 命令；构建镜像写入 OCI source/revision 标签，载入命令不会隐式创建集群。
 - 应用 Helm Chart 现已渲染前端、后端、VitePress 文档、异步 REST 判题服务及双副本 gRPC 沙箱，并提供 Service、探针、资源边界和核心多副本组件 PDB。
 - 本地基础设施 profile 增加固定版本 Mailpit，捕获注册/验证码邮件而不向公网发送；生产 profile 强制由运维提供真实 SMTP 地址、账号和 Secret。
 - 增加 `sandbox-workers` headless Service；判题服务通过 Kubernetes Service DNS 和 gRPC `round_robin` 使用 Ready EndpointSlice，不再需要默认 Kubernetes API 权限。
@@ -17,6 +19,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Security
 
+- 源码锁校验会拒绝可变 ref、非 CodeRushOJ 远端、未知字段、不安全相对路径、重复镜像和不完整组件集合；已有 checkout 不干净时保持现场并 fail closed。
 - 生产 values 强制所有应用镜像使用 digest，任何缺失都会使 Helm 渲染失败。
 - 默认 profile 不拉取未发布的应用镜像；Kind 应用 profile 固定 `:dev` 且使用 `imagePullPolicy: Never`，要求先显式载入本地构建产物。
 - 本地 Secret 生成器新增 JWT、内部结果 token 和四项 32-byte Base64 外部 API 密钥材料，保持幂等、静默和 `0600` 权限。
@@ -29,6 +32,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Known Limitations
 
+- 跨仓库 E2E 的第一阶段只完成不可变源码、镜像构建和载入契约；锁中的组件 commit 将在各自最终集成分支合并后通过独立评审更新，Kind 内真实产品闭环仍由 issue #11 后续阶段验收。
 - 这些应用清单已通过 Helm/契约测试，但在跨仓库集成镜像和 Judge v5 migration 完成前尚未执行完整 Kind 端到端判题验收。
 - 现有头像接口仍使用单副本后端的 RWO PVC；切换为 S3 对象存储适配器前，后端不具备无状态多副本能力。
 

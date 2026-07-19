@@ -81,6 +81,22 @@ class DocumentationContractTest(unittest.TestCase):
         self.assertIn("croj-frontend", readme)
         self.assertIn("croj-backend", readme)
 
+    def test_source_lock_workflow_is_documented(self):
+        readme = (ROOT / "README.md").read_text()
+        quickstart = (DOCS / "guide/quickstart.md").read_text()
+        combined = readme + quickstart
+        for value in (
+            "config/source-lock.json",
+            "make source-verify",
+            "make source-checkout",
+            "make images-build",
+            "make images-load",
+            "40 位",
+            ".workspace/sources",
+        ):
+            self.assertIn(value, combined)
+        self.assertIn("不会创建或启动 Kind 集群", combined)
+
     def test_docs_links_build(self):
         if not (DOCS / "pnpm-lock.yaml").is_file():
             self.skipTest("pnpm lockfile has not been generated")

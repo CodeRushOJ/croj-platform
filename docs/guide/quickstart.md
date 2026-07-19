@@ -70,16 +70,13 @@ make deploy
 make smoke
 ```
 
-基础命令不会尝试拉取尚未发布的应用镜像。开发者完成五个本地镜像构建并载入 Kind 后，再显式启用应用 profile：
+基础命令不会尝试拉取尚未发布的应用镜像。开发者从不可变源码锁构建五个本地镜像并载入 Kind 后，再显式启用应用 profile：
 
 ```bash
-kind load docker-image \
-  ghcr.io/coderushoj/croj-frontend:dev \
-  ghcr.io/coderushoj/croj-backend:dev \
-  ghcr.io/coderushoj/croj-judging-server:dev \
-  ghcr.io/coderushoj/croj-sandbox:dev \
-  ghcr.io/coderushoj/coderushoj-docs:dev \
-  --name coderushoj
+make source-verify
+make source-checkout
+make images-build
+make images-load
 helm upgrade --install coderushoj ./charts/coderushoj \
   --namespace coderushoj \
   --values ./charts/coderushoj/values-kind.yaml \
@@ -88,6 +85,40 @@ helm upgrade --install coderushoj ./charts/coderushoj \
 ```
 
 `values-kind-app.yaml` 使用 `imagePullPolicy: Never`，任何未加载镜像都会立即暴露为部署错误，不会悄悄从不可信标签拉取。跨仓库集成 CI 会在发布前替代这段人工加载流程。
+
+### 不可变源码与开发镜像
+
+`config/source-lock.json` 固定 frontend、backend、judging-server、sandbox 和 docs 的仓库、40 位 commit、Dockerfile、构建上下文及精确 `:dev` 镜像名。校验器拒绝 branch/tag、外部仓库、路径穿越、未知字段、缺失组件和重复镜像：
+
+```bash
+make source-verify
+./scripts/verify-source-lock.py rows
+```
+
+checkout 只把锁定 commit 写入 `.workspace/sources/<组件>/<commit>/`，并保持 detached HEAD。已有目录必须同时满足 commit 一致、工作树干净和 Dockerfile 存在，否则脚本失败且不会执行 `reset` 或 `clean`：
+
+```bash
+make source-checkout
+# 可为 CI 使用独立缓存目录
+CODERUSHOJ_SOURCES_DIR=/absolute/cache/path make source-checkout
+```
+
+构建会自动执行上述校验和 checkout，随后逐个调用 `docker buildx build --load`，并把锁定仓库与 commit 写入 OCI `source`/`revision` 标签：
+
+```bash
+make images-build
+docker image inspect ghcr.io/coderushoj/croj-judging-server:dev \
+  --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
+```
+
+加载是独立的显式步骤，只接受已经存在于本机 Docker 的五个锁定镜像。它不会创建或启动 Kind 集群；集群不存在时会直接失败：
+
+```bash
+make images-load
+CODERUSHOJ_CLUSTER_NAME=my-cluster make images-load
+```
+
+任一组件（包括后端和判题服务）的最终集成提交准备好后，只把对应 `commit` 更新为经评审且可从官方仓库 fetch 的 40 位对象 ID，然后依次运行 `make source-verify`、`make source-checkout`、`make images-build`。锁文件的 PR diff 是版本变更的审计记录；不要增加 branch 字段，也不要用可变 tag 替代 commit。当前第一阶段只建立可复现输入、构建与载入链路，不宣称完整业务 E2E 已通过。
 
 部署会完成：
 

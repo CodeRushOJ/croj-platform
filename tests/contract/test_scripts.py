@@ -15,6 +15,9 @@ SCRIPTS = (
     "scripts/generate-secrets.sh",
     "scripts/diagnostics.sh",
     "scripts/deploy.sh",
+    "scripts/checkout-sources.sh",
+    "scripts/build-dev-images.sh",
+    "scripts/load-dev-images.sh",
     "tests/smoke/platform.sh",
 )
 

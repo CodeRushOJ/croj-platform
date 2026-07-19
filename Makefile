@@ -1,4 +1,4 @@
-.PHONY: test lint validate bootstrap cluster-up cluster-down deploy smoke diagnostics compose-up compose-down
+.PHONY: test lint validate bootstrap source-verify source-checkout images-build images-load cluster-up cluster-down deploy smoke diagnostics compose-up compose-down
 
 test:
 	python3 -m unittest discover -s tests/contract -p 'test_*.py' -v
@@ -12,6 +12,18 @@ validate: test lint
 
 bootstrap:
 	./scripts/bootstrap.sh
+
+source-verify:
+	./scripts/verify-source-lock.py validate
+
+source-checkout:
+	./scripts/checkout-sources.sh
+
+images-build:
+	./scripts/build-dev-images.sh
+
+images-load:
+	./scripts/load-dev-images.sh
 
 cluster-up:
 	./scripts/cluster-up.sh

@@ -21,6 +21,8 @@ make smoke
 
 当前平台底座的 MySQL、Redis、RocketMQ、SeaweedFS、Gateway API 和 Envoy Gateway 已在三节点 Kind 集群通过真实冒烟测试。本地 profile 还提供不出网的 Mailpit 邮件捕获器。应用 Chart 已覆盖前端、后端、文档、异步 REST 判题服务和两副本沙箱；发布环境必须传入 CI 产出的镜像 digest。
 
+全新数据库没有硬编码管理员密码。应用镜像部署后运行 `scripts/bootstrap-admin.sh`，会通过独立、可删除的 Kubernetes Secret 执行一次性 Job；本地用户名为 `admin`，随机密码只保存在 `.workspace/secrets/bootstrap-admin-password`，不会输出到日志或注入长期 Backend Deployment。
+
 ## 项目状态
 
 - 当前平台版本：`0.1.0`

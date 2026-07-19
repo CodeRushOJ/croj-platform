@@ -10,6 +10,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Features
 
+- 增加默认关闭的一次性首个超级管理员 Job、独立可删除 Secret 和本地安全执行脚本；同一生产后端镜像通过 `CROJ_MODE=bootstrap-admin` 完成 Flyway 与幂等创建。
 - 应用 Helm Chart 现已渲染前端、后端、VitePress 文档、异步 REST 判题服务及双副本 gRPC 沙箱，并提供 Service、探针、资源边界和核心多副本组件 PDB。
 - 本地基础设施 profile 增加固定版本 Mailpit，捕获注册/验证码邮件而不向公网发送；生产 profile 强制由运维提供真实 SMTP 地址、账号和 Secret。
 - 增加 `sandbox-workers` headless Service；判题服务通过 Kubernetes Service DNS 和 gRPC `round_robin` 使用 Ready EndpointSlice，不再需要默认 Kubernetes API 权限。
@@ -17,6 +18,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Security
 
+- 管理员 bootstrap 凭据只进入受限 Job，不进入长期 Backend Deployment；本地密码随机生成到 `0600` 忽略文件，Job 仅允许 DNS/MySQL 出站且不挂 ServiceAccount token。
 - 生产 values 强制所有应用镜像使用 digest，任何缺失都会使 Helm 渲染失败。
 - 默认 profile 不拉取未发布的应用镜像；Kind 应用 profile 固定 `:dev` 且使用 `imagePullPolicy: Never`，要求先显式载入本地构建产物。
 - 本地 Secret 生成器新增 JWT、内部结果 token 和四项 32-byte Base64 外部 API 密钥材料，保持幂等、静默和 `0600` 权限。

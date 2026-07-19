@@ -18,6 +18,10 @@ deploymentProfile: development
 applications:
   enabled: false
 
+bootstrapAdmin:
+  enabled: false
+  secretName: coderushoj-admin-bootstrap-secret
+
 secrets:
   name: coderushoj-local-secrets
 

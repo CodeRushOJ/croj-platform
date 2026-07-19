@@ -42,6 +42,18 @@ class SecretSafetyTest(unittest.TestCase):
             self.assertIn(key, contents)
         self.assertIn("openssl rand -base64", contents)
 
+    def test_bootstrap_identity_uses_a_separate_deletable_secret(self):
+        generator = (ROOT / "scripts/generate-secrets.sh").read_text()
+        bootstrap = (ROOT / "scripts/bootstrap-admin.sh").read_text()
+        self.assertIn("bootstrap-admin-username", generator)
+        self.assertIn("bootstrap-admin-email", generator)
+        self.assertIn("bootstrap-admin-password", generator)
+        self.assertNotIn("kubectl create secret generic \"$bootstrap_secret_name\"", generator)
+        self.assertIn("coderushoj-admin-bootstrap-secret", bootstrap)
+        self.assertIn("--from-file=username=", bootstrap)
+        self.assertIn("--from-file=email=", bootstrap)
+        self.assertIn("--from-file=password=", bootstrap)
+
     def test_tracked_files_have_no_private_keys_or_jwts(self):
         result = subprocess.run(
             ["git", "ls-files"],

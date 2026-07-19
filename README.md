@@ -33,7 +33,7 @@ make images-build
 make images-load
 ```
 
-源码按 `<组件>/<commit>` 放在 `.workspace/sources/`，不会覆盖开发者已有仓库。`images-build` 会先做幂等 checkout，再用 Buildx 构建五个镜像并写入 OCI source/revision 标签；`images-load` 只校验本地镜像并载入已有集群，不会创建或启动 Kind 集群。完整更新与故障处理见[快速开始](docs/guide/quickstart.md#不可变源码与开发镜像)。
+源码按 `<组件>/<commit>` 放在 `.workspace/sources/`，不会覆盖开发者已有仓库。`images-build` 会先做幂等 checkout，再用 Buildx 构建五个镜像并写入 OCI source/revision 标签；`images-load` 仅在这两项标签与源码锁完全一致时才载入已有集群，不会创建或启动 Kind 集群。完整更新与故障处理见[快速开始](docs/guide/quickstart.md#不可变源码与开发镜像)。
 
 ## 项目状态
 

@@ -111,7 +111,7 @@ docker image inspect ghcr.io/coderushoj/croj-judging-server:dev \
   --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
 ```
 
-加载是独立的显式步骤，只接受已经存在于本机 Docker 的五个锁定镜像。它不会创建或启动 Kind 集群；集群不存在时会直接失败：
+加载是独立的显式步骤，只接受已经存在于本机 Docker，且 OCI `source`、`revision` 标签与源码锁完全一致的五个镜像。标签缺失或失配时会在调用 Kind 前失败；它不会创建或启动集群，集群不存在时也会直接失败：
 
 ```bash
 make images-load

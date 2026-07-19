@@ -29,7 +29,14 @@ require_command python3
 "$SCRIPT_DIR/checkout-sources.sh" --lock "$lock_file" --root "$sources_root"
 sources_root="$(cd "$sources_root" && pwd)"
 
-while IFS=$'\t' read -r component repository commit context dockerfile image; do
+record_count=0
+while IFS= read -r -d '' component; do
+  IFS= read -r -d '' repository || die "source lock record is truncated after component"
+  IFS= read -r -d '' commit || die "source lock record is truncated after repository"
+  IFS= read -r -d '' context || die "source lock record is truncated after commit"
+  IFS= read -r -d '' dockerfile || die "source lock record is truncated after context"
+  IFS= read -r -d '' image || die "source lock record is truncated after dockerfile"
+  record_count=$((record_count + 1))
   build_context="$(cd "$sources_root/$component/$commit/$context" && pwd)"
   log "building $image from $component@$commit"
   docker buildx build \
@@ -40,4 +47,5 @@ while IFS=$'\t' read -r component repository commit context dockerfile image; do
     --label "org.opencontainers.image.source=$repository" \
     --file "$build_context/$dockerfile" \
     "$build_context"
-done < <(python3 "$SCRIPT_DIR/verify-source-lock.py" rows --lock "$lock_file")
+done < <(python3 "$SCRIPT_DIR/verify-source-lock.py" "records" --lock "$lock_file")
+[[ "$record_count" -eq 5 ]] || die "source lock yielded $record_count records, expected 5"

@@ -31,8 +31,19 @@ class LockValidationError(Exception):
     """Raised when a source lock violates its contract."""
 
 
+def contains_ascii_control(value):
+    return isinstance(value, str) and any(
+        ord(character) < 32 or ord(character) == 127 for character in value
+    )
+
+
 def is_safe_relative_path(value):
-    if not isinstance(value, str) or not value or "\\" in value:
+    if (
+        not isinstance(value, str)
+        or not value
+        or "\\" in value
+        or contains_ascii_control(value)
+    ):
         return False
     path = pathlib.PurePosixPath(value)
     return not path.is_absolute() and ".." not in path.parts
@@ -83,6 +94,11 @@ def validate_lock(lock_path):
             errors.append(f"{component}: unknown field(s): {', '.join(sorted(unknown_fields))}")
         if missing_fields:
             errors.append(f"{component}: missing field(s): {', '.join(sorted(missing_fields))}")
+        for field in SOURCE_FIELDS:
+            if contains_ascii_control(source.get(field)):
+                errors.append(
+                    f"{component}: {field} must not contain ASCII control characters"
+                )
 
         repository = source.get("repository")
         expected_repository = f"https://github.com/CodeRushOJ/{REPOSITORIES[component]}.git"
@@ -98,11 +114,15 @@ def validate_lock(lock_path):
 
         context = source.get("context")
         if not is_safe_relative_path(context):
-            errors.append(f"{component}: context must be a safe relative path")
+            errors.append(
+                f"{component}: context must be a safe relative path without ASCII control characters"
+            )
 
         dockerfile = source.get("dockerfile")
         if not is_safe_relative_path(dockerfile):
-            errors.append(f"{component}: dockerfile must be a safe relative path")
+            errors.append(
+                f"{component}: dockerfile must be a safe relative path without ASCII control characters"
+            )
 
         image = source.get("image")
         if image != IMAGES[component]:
@@ -124,7 +144,7 @@ def validate_lock(lock_path):
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("validate", "rows"))
+    parser.add_argument("command", choices=("validate", "rows", "records"))
     parser.add_argument(
         "--lock",
         type=pathlib.Path,
@@ -143,9 +163,13 @@ def main():
 
     if args.command == "validate":
         print(f"source lock is valid: {args.lock} ({len(rows)} sources)")
-    else:
+    elif args.command == "rows":
         for row in rows:
             print("\t".join(row))
+    else:
+        for row in rows:
+            for field in row:
+                sys.stdout.buffer.write(field.encode("utf-8") + b"\0")
     return 0
 
 

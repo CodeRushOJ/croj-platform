@@ -25,7 +25,10 @@ class GatewayRenderTest(unittest.TestCase):
     def test_gateway_and_application_routes_render(self):
         self.assertTrue((CHART / "Chart.yaml").is_file(), "application chart is missing")
         result = subprocess.run(
-            ["helm", "template", "coderushoj", str(CHART), "--namespace", "coderushoj"],
+            [
+                "helm", "template", "coderushoj", str(CHART),
+                "--namespace", "coderushoj", "--set", "applications.enabled=true",
+            ],
             text=True,
             capture_output=True,
             check=False,
@@ -48,6 +51,8 @@ class GatewayRenderTest(unittest.TestCase):
                 str(CHART),
                 "--namespace",
                 "coderushoj",
+                "--set",
+                "applications.enabled=true",
                 "--values",
                 str(CHART / "values-kind.yaml"),
             ],

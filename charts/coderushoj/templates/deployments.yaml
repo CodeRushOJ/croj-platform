@@ -1,0 +1,430 @@
+{{- if .Values.applications.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.services.frontend.name }}
+  labels:
+    {{- include "coderushoj.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels:
+      {{- include "coderushoj.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        {{- include "coderushoj.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: frontend
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: frontend
+          image: {{ include "coderushoj.image" (dict "image" .Values.images.frontend "profile" .Values.deploymentProfile) }}
+          imagePullPolicy: {{ .Values.images.frontend.pullPolicy }}
+          ports:
+            - {name: http, containerPort: 8080, protocol: TCP}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources: {{- toYaml .Values.frontend.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: nginx-cache, mountPath: /var/cache/nginx}
+            - {name: nginx-run, mountPath: /var/run}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+        - name: nginx-cache
+          emptyDir: {sizeLimit: 64Mi}
+        - name: nginx-run
+          emptyDir: {sizeLimit: 8Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.services.backend.name }}
+  labels:
+    {{- include "coderushoj.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  replicas: {{ .Values.backend.replicas }}
+  selector:
+    matchLabels:
+      {{- include "coderushoj.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        {{- include "coderushoj.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: backend
+          image: {{ include "coderushoj.image" (dict "image" .Values.images.backend "profile" .Values.deploymentProfile) }}
+          imagePullPolicy: {{ .Values.images.backend.pullPolicy }}
+          ports:
+            - {name: http, containerPort: 7999, protocol: TCP}
+          env:
+            - name: DATABASE_URL
+              value: {{ printf "jdbc:mysql://%s:%v/%s?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false" .Values.dependencies.mysql.host .Values.dependencies.mysql.port .Values.dependencies.mysql.database | quote }}
+            - name: DATABASE_USERNAME
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: mysql-username}}
+            - name: DATABASE_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: mysql-password}}
+            - name: REDIS_HOST
+              value: {{ .Values.dependencies.redis.host | quote }}
+            - name: REDIS_PORT
+              value: {{ .Values.dependencies.redis.port | quote }}
+            - name: REDIS_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: redis-password}}
+            - name: JWT_SECRET
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: jwt-secret}}
+            - name: JUDGE_RESULT_SERVICE_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: judge-result-service-token}}
+            - name: CORS_ALLOWED_ORIGINS
+              value: {{ .Values.backend.corsAllowedOrigins | quote }}
+            - name: SMTP_HOST
+              value: {{ .Values.backend.smtp.host | quote }}
+            - name: SMTP_PORT
+              value: {{ .Values.backend.smtp.port | quote }}
+            - name: SMTP_USERNAME
+              value: {{ .Values.backend.smtp.username | quote }}
+            - name: SMTP_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: smtp-password}}
+            - name: SMTP_AUTH
+              value: {{ .Values.backend.smtp.auth | quote }}
+            - name: SMTP_STARTTLS
+              value: {{ .Values.backend.smtp.startTLS | quote }}
+            - name: SMTP_SSL
+              value: {{ .Values.backend.smtp.ssl | quote }}
+            - name: SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH
+              value: {{ .Values.backend.smtp.auth | quote }}
+            - name: SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE
+              value: {{ .Values.backend.smtp.startTLS | quote }}
+            - name: SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_REQUIRED
+              value: {{ .Values.backend.smtp.startTLS | quote }}
+            - name: SPRING_MAIL_PROPERTIES_MAIL_SMTP_SSL_ENABLE
+              value: {{ .Values.backend.smtp.ssl | quote }}
+            - name: ROCKETMQ_NAME_SERVER
+              value: {{ .Values.dependencies.rocketmq.nameServer | quote }}
+            - name: SUBMISSION_TOPIC
+              value: {{ .Values.dependencies.rocketmq.submissionTopic | quote }}
+            - name: TEST_BUNDLE_STORAGE_ENABLED
+              value: "true"
+            - name: TEST_BUNDLE_S3_BUCKET
+              value: {{ .Values.dependencies.objectStorage.bucket | quote }}
+            - name: TEST_BUNDLE_S3_ENDPOINT
+              value: {{ .Values.dependencies.objectStorage.httpEndpoint | quote }}
+            - name: TEST_BUNDLE_S3_PATH_STYLE
+              value: "true"
+            - name: AWS_REGION
+              value: {{ .Values.dependencies.objectStorage.region | quote }}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: s3-access-key}}
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: s3-secret-key}}
+            - name: FILE_UPLOAD_DIR
+              value: /app/uploads
+          readinessProbe:
+            httpGet: {path: /api/actuator/health/readiness, port: http}
+            initialDelaySeconds: 20
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /api/actuator/health/liveness, port: http}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          startupProbe:
+            httpGet: {path: /api/actuator/health/liveness, port: http}
+            failureThreshold: 30
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources: {{- toYaml .Values.backend.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: uploads, mountPath: /app/uploads}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 1Gi}
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-backend-uploads
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.services.judge.name }}
+  labels:
+    {{- include "coderushoj.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: judging-server
+spec:
+  replicas: {{ .Values.judgingServer.replicas }}
+  selector:
+    matchLabels:
+      {{- include "coderushoj.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: judging-server
+  template:
+    metadata:
+      labels:
+        {{- include "coderushoj.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: judging-server
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: judging-server
+          image: {{ include "coderushoj.image" (dict "image" .Values.images.judgingServer "profile" .Values.deploymentProfile) }}
+          imagePullPolicy: {{ .Values.images.judgingServer.pullPolicy }}
+          {{- if .Values.judgingServer.externalAPI.enabled }}
+          ports:
+            - {name: external-http, containerPort: 8081, protocol: TCP}
+          {{- end }}
+          env:
+            - name: DATABASE_HOST
+              value: {{ .Values.dependencies.mysql.host | quote }}
+            - name: DATABASE_PORT
+              value: {{ .Values.dependencies.mysql.port | quote }}
+            - name: DATABASE_NAME
+              value: {{ .Values.dependencies.mysql.database | quote }}
+            - name: DATABASE_USERNAME
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: mysql-username}}
+            - name: DATABASE_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: mysql-password}}
+            {{- if .Values.judgingServer.externalAPI.enabled }}
+            - name: REDIS_ADDRESS
+              value: {{ printf "%s:%v" .Values.dependencies.redis.host .Values.dependencies.redis.port | quote }}
+            - name: REDIS_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: redis-password}}
+            {{- end }}
+            - name: ROCKETMQ_NAME_SERVER
+              value: {{ .Values.dependencies.rocketmq.nameServer | quote }}
+            - name: SUBMISSION_TOPIC
+              value: {{ .Values.dependencies.rocketmq.submissionTopic | quote }}
+            - name: BACKEND_INTERNAL_URL
+              value: {{ printf "http://%s:%v/api" .Values.services.backend.name .Values.services.backend.port | quote }}
+            - name: JUDGE_RESULT_SERVICE_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: judge-result-service-token}}
+            - name: OBJECT_STORAGE_ENDPOINT
+              value: {{ .Values.dependencies.objectStorage.endpoint | quote }}
+            - name: OBJECT_STORAGE_BUCKET
+              value: {{ .Values.dependencies.objectStorage.bucket | quote }}
+            - name: OBJECT_STORAGE_REGION
+              value: {{ .Values.dependencies.objectStorage.region | quote }}
+            - name: OBJECT_STORAGE_USE_TLS
+              value: "false"
+            - name: OBJECT_STORAGE_ACCESS_KEY
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: s3-access-key}}
+            - name: OBJECT_STORAGE_SECRET_KEY
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: s3-secret-key}}
+            - name: JUDGE_BUNDLE_CACHE_DIR
+              value: /tmp/croj-bundles
+            - name: SANDBOX_GRPC_TARGET
+              value: {{ printf "dns:///%s.%s.svc.cluster.local:%v" .Values.services.sandbox.name .Release.Namespace .Values.services.sandbox.port | quote }}
+            - name: SANDBOX_ALLOW_LEGACY_ENDPOINT_SLICE
+              value: "false"
+            - name: EXTERNAL_API_ENABLED
+              value: {{ .Values.judgingServer.externalAPI.enabled | quote }}
+            {{- if .Values.judgingServer.externalAPI.enabled }}
+            - name: EXTERNAL_API_LISTEN_ADDRESS
+              value: {{ .Values.judgingServer.externalAPI.listenAddress | quote }}
+            - name: EXTERNAL_WORKER_ID
+              valueFrom: {fieldRef: {fieldPath: metadata.uid}}
+            - name: EXTERNAL_WORKER_CONCURRENCY
+              value: {{ .Values.judgingServer.externalAPI.workerConcurrency | quote }}
+            - name: EXTERNAL_API_AUTH_PEPPER_BASE64
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: external-api-auth-pepper-base64}}
+            - name: EXTERNAL_IDEMPOTENCY_PEPPER_BASE64
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: external-idempotency-pepper-base64}}
+            - name: EXTERNAL_CURSOR_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: external-cursor-key-base64}}
+            - name: EXTERNAL_SOURCE_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: external-source-key-base64}}
+            {{- end }}
+          {{- if .Values.judgingServer.externalAPI.enabled }}
+          readinessProbe:
+            httpGet: {path: /readyz, port: external-http}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /livez, port: external-http}
+            periodSeconds: 10
+          startupProbe:
+            httpGet: {path: /livez, port: external-http}
+            failureThreshold: 30
+            periodSeconds: 2
+          {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources: {{- toYaml .Values.judgingServer.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 4Gi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: croj-sandbox
+  labels:
+    {{- include "coderushoj.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox
+spec:
+  replicas: {{ .Values.sandbox.replicas }}
+  strategy:
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector:
+    matchLabels:
+      {{- include "coderushoj.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: sandbox
+  template:
+    metadata:
+      labels:
+        {{- include "coderushoj.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: sandbox
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      hostPID: true
+      {{- with .Values.sandbox.runtimeClassName }}
+      runtimeClassName: {{ . }}
+      {{- end }}
+      terminationGracePeriodSeconds: 30
+      nodeSelector: {{- toYaml .Values.sandbox.nodeSelector | nindent 8 }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "coderushoj.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: sandbox
+      containers:
+        - name: sandbox
+          image: {{ include "coderushoj.image" (dict "image" .Values.images.sandbox "profile" .Values.deploymentProfile) }}
+          imagePullPolicy: {{ .Values.images.sandbox.pullPolicy }}
+          command: [/usr/bin/nsenter]
+          args:
+            - --cgroup=/proc/1/ns/cgroup
+            - --
+            - /app/api-server
+            - {{ printf "-max-concurrency=%v" .Values.sandbox.maxConcurrency | quote }}
+          env:
+            - name: CROJ_SANDBOX_INSTANCE_ID
+              valueFrom: {fieldRef: {fieldPath: metadata.uid}}
+            - {name: HOME, value: /tmp}
+            - {name: GOCACHE, value: /tmp/go-build-cache}
+          ports:
+            - {name: grpc, containerPort: 50051, protocol: TCP}
+          readinessProbe:
+            grpc: {port: 50051}
+            periodSeconds: 5
+          livenessProbe:
+            grpc: {port: 50051}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            privileged: true
+            allowPrivilegeEscalation: true
+            readOnlyRootFilesystem: true
+            runAsUser: 0
+          resources: {{- toYaml .Values.sandbox.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: cgroup, mountPath: /sys/fs/cgroup}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 4Gi}
+        - name: cgroup
+          hostPath: {path: /sys/fs/cgroup, type: Directory}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.services.docs.name }}
+  labels:
+    {{- include "coderushoj.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: docs
+spec:
+  replicas: {{ .Values.docs.replicas }}
+  selector:
+    matchLabels:
+      {{- include "coderushoj.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: docs
+  template:
+    metadata:
+      labels:
+        {{- include "coderushoj.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: docs
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: docs
+          image: {{ include "coderushoj.image" (dict "image" .Values.images.docs "profile" .Values.deploymentProfile) }}
+          imagePullPolicy: {{ .Values.images.docs.pullPolicy }}
+          ports:
+            - {name: http, containerPort: 8080, protocol: TCP}
+          readinessProbe:
+            httpGet: {path: /, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /, port: http}
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources: {{- toYaml .Values.docs.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: nginx-cache, mountPath: /var/cache/nginx}
+            - {name: nginx-run, mountPath: /var/run}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+        - name: nginx-cache
+          emptyDir: {sizeLimit: 64Mi}
+        - name: nginx-run
+          emptyDir: {sizeLimit: 8Mi}
+{{- end }}

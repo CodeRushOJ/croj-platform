@@ -1,3 +1,4 @@
+{{- if .Values.applications.enabled }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -22,9 +23,11 @@ spec:
         - path:
             type: PathPrefix
             value: /docs
-      backendRefs:
-        - name: {{ .Values.services.docs.name }}
-          port: {{ .Values.services.docs.port }}
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            hostname: {{ .Values.gateway.docsHost | quote }}
+            statusCode: 302
     - matches:
         - path:
             type: PathPrefix
@@ -32,3 +35,50 @@ spec:
       backendRefs:
         - name: {{ .Values.services.frontend.name }}
           port: {{ .Values.services.frontend.port }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}-docs
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  parentRefs:
+    - name: {{ .Release.Name }}
+      sectionName: docs-http
+  hostnames:
+    - {{ .Values.gateway.docsHost | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ .Values.services.docs.name }}
+          port: {{ .Values.services.docs.port }}
+{{- if and .Values.applications.enabled .Values.judgingServer.externalAPI.enabled .Values.judgingServer.externalAPI.expose }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}-judge-api
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  parentRefs:
+    - name: {{ .Release.Name }}
+      sectionName: judge-api
+  hostnames:
+    - {{ .Values.gateway.judgeHost | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/v1
+      backendRefs:
+        - name: {{ .Values.services.judge.name }}
+          port: {{ .Values.services.judge.port }}
+{{- end }}
+{{- end }}

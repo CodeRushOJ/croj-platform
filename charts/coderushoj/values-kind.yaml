@@ -2,3 +2,7 @@ gateway:
   envoyProxy:
     enabled: true
     nodePort: 30080
+
+judgingServer:
+  externalAPI:
+    expose: true

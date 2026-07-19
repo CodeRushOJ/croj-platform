@@ -1,12 +1,69 @@
 gateway:
   className: envoy
   host: coderushoj.local
+  docsHost: docs.coderushoj.local
+  judgeHost: judge.coderushoj.local
   class:
     create: true
     controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  tls:
+    enabled: false
+    secretName: ""
   envoyProxy:
     enabled: false
     nodePort: 30080
+
+deploymentProfile: development
+
+applications:
+  enabled: false
+
+secrets:
+  name: coderushoj-local-secrets
+
+dependencies:
+  mysql:
+    host: coderushoj-infra-mysql
+    port: 3306
+    database: code_rush_oj
+  redis:
+    host: coderushoj-infra-redis
+    port: 6379
+  rocketmq:
+    nameServer: coderushoj-infra-rocketmq-namesrv:9876
+    submissionTopic: submission-topic
+  objectStorage:
+    endpoint: coderushoj-infra-seaweedfs:8333
+    httpEndpoint: http://coderushoj-infra-seaweedfs:8333
+    bucket: coderushoj-testdata
+    region: us-east-1
+
+images:
+  frontend:
+    repository: ghcr.io/coderushoj/croj-frontend
+    tag: 0.1.0
+    digest: ""
+    pullPolicy: IfNotPresent
+  backend:
+    repository: ghcr.io/coderushoj/croj-backend
+    tag: 0.1.0
+    digest: ""
+    pullPolicy: IfNotPresent
+  judgingServer:
+    repository: ghcr.io/coderushoj/croj-judging-server
+    tag: 0.1.0
+    digest: ""
+    pullPolicy: IfNotPresent
+  sandbox:
+    repository: ghcr.io/coderushoj/croj-sandbox
+    tag: 0.1.0
+    digest: ""
+    pullPolicy: IfNotPresent
+  docs:
+    repository: ghcr.io/coderushoj/coderushoj-docs
+    tag: 0.1.0
+    digest: ""
+    pullPolicy: IfNotPresent
 
 services:
   frontend:
@@ -15,6 +72,65 @@ services:
   backend:
     name: croj-backend
     port: 7999
+  judge:
+    name: croj-judging-server
+    port: 8081
+  sandbox:
+    name: sandbox-workers
+    port: 50051
   docs:
     name: croj-docs
     port: 80
+
+frontend:
+  replicas: 2
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+
+backend:
+  replicas: 1
+  corsAllowedOrigins: http://coderushoj.local
+  uploads:
+    storage: 5Gi
+    storageClassName: ""
+  smtp:
+    host: coderushoj-infra-mailpit
+    port: 1025
+    username: coderushoj
+    auth: false
+    startTLS: false
+    ssl: false
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {cpu: "2", memory: 1536Mi}
+
+judgingServer:
+  replicas: 2
+  externalAPI:
+    enabled: true
+    expose: false
+    listenAddress: 0.0.0.0:8081
+    workerConcurrency: 4
+    tls:
+      enabled: false
+      secretName: ""
+  resources:
+    requests: {cpu: 250m, memory: 256Mi}
+    limits: {cpu: "2", memory: 1Gi}
+
+sandbox:
+  replicas: 2
+  maxConcurrency: 2
+  runtimeClassName: ""
+  nodeSelector:
+    coderushoj.io/sandbox: "true"
+  resources:
+    requests: {cpu: 500m, memory: 768Mi}
+    limits: {cpu: "2", memory: 2Gi}
+
+docs:
+  replicas: 1
+  resources:
+    requests: {cpu: 25m, memory: 32Mi}
+    limits: {cpu: 250m, memory: 128Mi}

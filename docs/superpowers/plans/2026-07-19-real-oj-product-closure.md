@@ -16,7 +16,7 @@
 - 实现管理端题目草稿、测试包上传、校验结果和发布 UI。
 - 补充 OpenAPI、manifest 示例和管理员操作文档。
 - 建立题目导入 Parser SPI、统一 `ProblemImportDraft` 和预检作业 API。
-- 以固定上游提交的 FreeProblemSet XML/ZIP 样例先完成 FPS 1.1/1.2 解析、XXE/实体扩展防护、字段映射和批量导入测试。
+- 以固定上游提交的 FreeProblemSet XML/ZIP 样例完成 FPS 1.1/1.2/1.4 解析、官方 PUBLIC DOCTYPE 兼容、XXE/未解析实体防护、字段映射和批量导入测试。
 - 再实现 CodeRush 原生包、ICPC problem package 与 Polygon package 适配器；格式不支持项必须作为预检警告返回。
 
 验收：浏览器可上传测试包或 FPS 题包，预检确认后发布；匿名用户读取同一版本题面，隐藏用例摘要与原包审计信息一致。

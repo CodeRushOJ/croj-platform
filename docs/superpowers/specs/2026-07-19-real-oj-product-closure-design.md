@@ -54,7 +54,7 @@
 
 首批格式：
 
-1. `FPS_XML`：准确兼容 FreeProblemSet FPS 1.1/1.2。覆盖题面、时/内存限制、多组样例、隐藏测试、内嵌图片、来源、标准解、代码模板、SPJ/TPJ/Interactor 和远程题目标识。
+1. `FPS_XML`：准确兼容 FreeProblemSet FPS 1.1/1.2/1.4。覆盖题面、时/内存限制、多组样例、隐藏测试、内嵌图片、来源、标准解、代码模板、SPJ/TPJ/Interactor 和远程题目标识。
 2. `CODERUSH_PACKAGE`：CodeRushOJ 原生 ZIP，使用版本化 JSON manifest，适合完整无损导入导出。
 3. `ICPC_PACKAGE`：兼容 `problem.yaml`、statement、sample/secret data 的 ICPC/DOMjudge/Kattis 风格题包。
 4. `POLYGON_PACKAGE`：兼容 Polygon 导出包的 `problem.xml`、statements、solutions 和 tests。
@@ -63,7 +63,7 @@
 
 安全约束：
 
-- XML 解析禁用 DTD、外部实体、XInclude 和网络访问，限制节点深度、文本长度和题目数，防止 XXE 与实体扩展攻击。
+- XML 解析只接受 FPS 官方 PUBLIC DOCTYPE 声明，但禁用 DTD 解析、外部实体、XInclude 和网络访问；未解析实体必须 fail-closed，并限制包字节、XML 事件、文本、题目、测试、资源和图片数量。
 - ZIP 继续执行路径、链接、文件数、压缩比、展开大小和单文件大小限制。
 - HTML/Markdown 在服务端净化；图片只允许白名单 MIME 并重新生成安全对象键。
 - SPJ、Interactor、标准解和模板只作为受控资源存储，导入阶段绝不执行。

@@ -210,4 +210,4 @@ helm template coderushoj ./charts/coderushoj \
 
 ## 题库导入
 
-[Free Problem Set](https://github.com/zhblue/freeproblemset/tree/master)（FPS）是 LGPL-3.0 的 XML 题目交换格式。CodeRushOJ 当前尚未实现导入器，由 [croj-backend/issues/12](https://github.com/CodeRushOJ/croj-backend/issues/12) 跟踪；不要手工直灌数据库。未来导入链路必须先 dry-run，记录题目许可与来源 provenance，并使用防 XXE/实体扩张的安全 XML 解析及受校验的 hidden bundle 对象存储流程。
+[Free Problem Set](https://github.com/zhblue/freeproblemset/tree/master)（FPS）是 LGPL-3.0 的 XML 题目交换格式。CodeRushOJ 的 FPS 解析适配器由 [croj-backend#20](https://github.com/CodeRushOJ/croj-backend/pull/20) 交付，兼容 1.1/1.2/1.4，并以固定上游提交的真实题包验证官方 PUBLIC DOCTYPE、分组测试点和 fail-closed 实体处理；测试包的私有 S3/MinIO 存储及发布门禁由 [croj-backend#22](https://github.com/CodeRushOJ/croj-backend/pull/22) 交付。导入必须先预检并由管理员确认，记录许可、来源 URL、解析器版本和原包 SHA-256；不要手工直灌数据库，也不要绕过统一题目发布门禁。

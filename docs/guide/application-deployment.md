@@ -6,8 +6,8 @@
 
 Chart 清单已经通过 schema、合同测试和 kubeconform，但组件镜像状态必须如实区分：
 
-- backend 尚无 production Dockerfile，non-root/read-only 镜像与 Actuator probe 由 [croj-backend/issues/10](https://github.com/CodeRushOJ/croj-backend/issues/10) 跟踪；
-- frontend 尚无 production Dockerfile，unprivileged nginx、SPA fallback 与 `/healthz` 由 [croj-frontend/issues/5](https://github.com/CodeRushOJ/croj-frontend/issues/5) 跟踪；
+- backend production Dockerfile、non-root/read-only 镜像与 Actuator probe 已在 [croj-backend PR #16](https://github.com/CodeRushOJ/croj-backend/pull/16) 实现，并继续由 [croj-backend/issues/10](https://github.com/CodeRushOJ/croj-backend/issues/10) 跟踪至合并发布；
+- frontend unprivileged nginx、SPA fallback、`/healthz` 与只读根文件系统合同已在 [croj-frontend PR #10](https://github.com/CodeRushOJ/croj-frontend/pull/10) 实现，并继续由 [croj-frontend/issues/5](https://github.com/CodeRushOJ/croj-frontend/issues/5) 跟踪至合并发布；
 - judging 已有 distroless/non-root 镜像，但尚无可探测的 HTTP/exec/TCP 健康端点，Chart 默认不伪造 probe，后续由 [croj-judging-server/issues/7](https://github.com/CodeRushOJ/croj-judging-server/issues/7) 提供原生健康接口；
 - backend 文件上传迁移到 S3/MinIO 的长期方案由 [croj-backend/issues/11](https://github.com/CodeRushOJ/croj-backend/issues/11) 跟踪。
 
@@ -84,7 +84,24 @@ JUDGE_RESULT_CALLBACK_TIMEOUT=10s
 
 它通过 namespace 级 ServiceAccount/Role 列出 EndpointSlice，不能读取 Secret、Pod、Node 或集群级资源。backend Service 必须保持 `croj-backend:7999`，frontend Service 必须保持 `croj-frontend:80`，否则 values schema 会拒绝破坏 Gateway route 的配置。
 
-hidden bundle 的 `OBJECT_STORAGE_ENDPOINT/BUCKET/REGION/USE_TLS` 是普通配置，`OBJECT_STORAGE_ACCESS_KEY/SECRET_KEY` 仍只来自外部 Secret。`OBJECT_STORAGE_ENDPOINT` 必须是 `host[:port]`（默认 `coderushoj-infra-seaweedfs.coderushoj.svc:8333`），不能包含 `http://` 或 `https://`；协议只由 `OBJECT_STORAGE_USE_TLS` 决定。judging 将 `/tmp` 挂成默认 `2Gi`、schema 最大允许 `4Gi` 的 `emptyDir`，并预留 `JUDGE_BUNDLE_CACHE_DIR=/tmp/croj-bundles`；这只是可删除、可重建的下载缓存，S3/MinIO 才是 bundle 的权威真相源。
+hidden bundle 的 `OBJECT_STORAGE_ENDPOINT/BUCKET/REGION/USE_TLS` 是普通配置，`OBJECT_STORAGE_ACCESS_KEY/SECRET_KEY` 仍只来自外部 Secret。`OBJECT_STORAGE_ENDPOINT` 必须是 `host[:port]`（默认 `coderushoj-infra-seaweedfs.coderushoj.svc:8333`），不能包含 `http://` 或 `https://`；协议只由 `OBJECT_STORAGE_USE_TLS` 决定。judging 将 `/tmp` 挂成默认 `2Gi`、schema 最大允许 `4Gi` 的 `emptyDir`；缓存只是可删除、可重建的副本，S3/MinIO 才是 bundle 的权威真相源。
+
+Chart 将 judging-server 已冻结的全部安全边界显式注入 Pod，整数始终渲染为十进制字符串，避免 Helm 大整数科学计数法破坏 Go 环境变量解析：
+
+| 环境变量 | 默认值 | 约束用途 |
+| --- | ---: | --- |
+| `JUDGE_BUNDLE_CACHE_DIR` | `/tmp/croj-bundles` | 专用 `emptyDir` 缓存目录 |
+| `JUDGE_BUNDLE_CACHE_MAX_BYTES` | `2147483648` | 进程缓存最大 2 GiB |
+| `JUDGE_BUNDLE_CACHE_TTL` | `24h` | 已下载 bundle 的最长复用时间 |
+| `JUDGE_BUNDLE_MAX_OBJECT_BYTES` | `536870912` | 对象下载最大 512 MiB |
+| `JUDGE_BUNDLE_MAX_FILES` | `20001` | ZIP 文件数量上限 |
+| `JUDGE_BUNDLE_MAX_MANIFEST_BYTES` | `1048576` | manifest 最大 1 MiB |
+| `JUDGE_BUNDLE_MAX_CASE_BYTES` | `67108864` | 单个 case 文件最大 64 MiB |
+| `JUDGE_BUNDLE_MAX_UNCOMPRESSED_BYTES` | `536870912` | 总解压体积最大 512 MiB |
+| `JUDGE_BUNDLE_MAX_COMPRESSION_RATIO` | `200` | zip bomb 压缩比上限 |
+| `JUDGE_BUNDLE_MAX_INFRA_ATTEMPTS` | `3` | 单 case 更换 sandbox endpoint 的次数上限 |
+
+除缓存 TTL 外的数值均受 values schema 正整数约束；TTL 使用 Go duration 形式。生产覆盖这些参数时，应同时满足 `JUDGE_BUNDLE_CACHE_MAX_BYTES` 不大于 `/tmp` `emptyDir` 的 `bundleCacheSizeLimit`，并为运行时临时文件保留余量。
 
 ## 上传存储
 

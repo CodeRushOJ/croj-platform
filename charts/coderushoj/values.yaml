@@ -205,6 +205,15 @@ judgingServer:
     sandboxMaxConnections: 128
     sandboxConnectionIdleTTL: 5m
     bundleCacheDir: /tmp/croj-bundles
+    bundleCacheMaxBytes: 2147483648
+    bundleCacheTTL: 24h
+    bundleMaxObjectBytes: 536870912
+    bundleMaxFiles: 20001
+    bundleMaxManifestBytes: 1048576
+    bundleMaxCaseBytes: 67108864
+    bundleMaxUncompressedBytes: 536870912
+    bundleMaxCompressionRatio: 200
+    bundleMaxInfraAttempts: 3
     bundleCacheSizeLimit: 2Gi
     objectStorageEndpoint: coderushoj-infra-seaweedfs.coderushoj.svc:8333
     objectStorageBucket: coderushoj-testdata

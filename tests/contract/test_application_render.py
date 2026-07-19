@@ -117,6 +117,15 @@ class ApplicationRenderTest(unittest.TestCase):
             ("SANDBOX_PORT_NAME", "grpc"),
             ("SANDBOX_EXECUTE_TIMEOUT", "60s"),
             ("JUDGE_BUNDLE_CACHE_DIR", "/tmp/croj-bundles"),
+            ("JUDGE_BUNDLE_CACHE_MAX_BYTES", "2147483648"),
+            ("JUDGE_BUNDLE_CACHE_TTL", "24h"),
+            ("JUDGE_BUNDLE_MAX_OBJECT_BYTES", "536870912"),
+            ("JUDGE_BUNDLE_MAX_FILES", "20001"),
+            ("JUDGE_BUNDLE_MAX_MANIFEST_BYTES", "1048576"),
+            ("JUDGE_BUNDLE_MAX_CASE_BYTES", "67108864"),
+            ("JUDGE_BUNDLE_MAX_UNCOMPRESSED_BYTES", "536870912"),
+            ("JUDGE_BUNDLE_MAX_COMPRESSION_RATIO", "200"),
+            ("JUDGE_BUNDLE_MAX_INFRA_ATTEMPTS", "3"),
             ("OBJECT_STORAGE_ENDPOINT", "coderushoj-infra-seaweedfs.coderushoj.svc:8333"),
             ("OBJECT_STORAGE_BUCKET", "coderushoj-testdata"),
             ("OBJECT_STORAGE_REGION", "us-east-1"),
@@ -146,6 +155,26 @@ class ApplicationRenderTest(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("must be one of", result.stderr)
+
+    def test_judging_bundle_limits_must_be_positive(self):
+        for key in (
+            "bundleCacheMaxBytes",
+            "bundleMaxObjectBytes",
+            "bundleMaxFiles",
+            "bundleMaxManifestBytes",
+            "bundleMaxCaseBytes",
+            "bundleMaxUncompressedBytes",
+            "bundleMaxCompressionRatio",
+            "bundleMaxInfraAttempts",
+        ):
+            with self.subTest(key=key):
+                result = self.helm(
+                    "--set", "judgingServer.enabled=true",
+                    "--set", f"judgingServer.existingSecret.name={SECRET_NAME}",
+                    "--set", f"judgingServer.config.{key}=0",
+                )
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(f"/judgingServer/config/{key}", result.stderr)
 
     def test_secret_consuming_workloads_fail_without_an_external_secret_name(self):
         for component in ("backend", "judgingServer"):

@@ -30,35 +30,14 @@ python3 "$SCRIPT_DIR/verify-source-lock.py" validate --lock "$lock_file" >/dev/n
 
 mkdir -p "$sources_root/.tmp"
 sources_root="$(cd "$sources_root" && pwd)"
-active_temporary_directory=""
-active_lock_directory=""
+lock_timeout_ms="${CODERUSHOJ_CHECKOUT_LOCK_TIMEOUT_MS:-300000}"
+lock_poll_ms="${CODERUSHOJ_CHECKOUT_LOCK_POLL_MS:-50}"
+legacy_lock_grace_ms="${CODERUSHOJ_CHECKOUT_LOCK_LEGACY_GRACE_MS:-1000}"
 
-release_checkout_lock() {
-  local owner=""
-  if [[ -z "$active_lock_directory" || ! -d "$active_lock_directory" ]]; then
-    active_lock_directory=""
-    return
-  fi
-  if [[ -f "$active_lock_directory/owner" ]]; then
-    owner="$(cat "$active_lock_directory/owner")"
-  fi
-  if [[ -z "$owner" || "$owner" == "$$" ]]; then
-    rm -f -- "$active_lock_directory/owner"
-    rmdir "$active_lock_directory" 2>/dev/null || true
-  fi
-  active_lock_directory=""
-}
-
-cleanup() {
-  if [[ -n "$active_temporary_directory" && -d "$active_temporary_directory" ]]; then
-    case "$active_temporary_directory" in
-      "$sources_root/.tmp/"*) rm -rf -- "$active_temporary_directory" ;;
-      *) log "refusing to remove unexpected temporary path: $active_temporary_directory" ;;
-    esac
-  fi
-  release_checkout_lock
-}
-trap cleanup EXIT
+[[ "$lock_timeout_ms" =~ ^[1-9][0-9]*$ ]] || die "checkout lock timeout must be positive milliseconds"
+[[ "$lock_poll_ms" =~ ^[1-9][0-9]*$ ]] || die "checkout lock poll interval must be positive milliseconds"
+[[ "$legacy_lock_grace_ms" =~ ^[1-9][0-9]*$ ]] || die "legacy lock grace must be positive milliseconds"
+((legacy_lock_grace_ms >= lock_poll_ms)) || die "legacy lock grace must be at least one poll interval"
 
 verify_checkout() {
   local component="$1"
@@ -80,30 +59,16 @@ verify_checkout() {
     die "$component Dockerfile is missing: $checkout_directory/$context/$dockerfile"
 }
 
-acquire_checkout_lock() {
+run_locked_checkout() {
   local lock_directory="$1"
-  local attempts=0
-  local owner=""
-  local stale_directory=""
-
-  while ! mkdir "$lock_directory" 2>/dev/null; do
-    owner="$(cat "$lock_directory/owner" 2>/dev/null || true)"
-    if [[ "$owner" =~ ^[0-9]+$ ]] && ! kill -0 "$owner" 2>/dev/null; then
-      stale_directory="${lock_directory}.stale.$$.$attempts"
-      if mv "$lock_directory" "$stale_directory" 2>/dev/null; then
-        rm -f -- "$stale_directory/owner"
-        rmdir "$stale_directory" 2>/dev/null || \
-          die "stale checkout lock contains unexpected files: $stale_directory"
-        continue
-      fi
-    fi
-    attempts=$((attempts + 1))
-    [[ "$attempts" -lt 6000 ]] || die "timed out waiting for checkout lock: $lock_directory"
-    sleep 0.05
-  done
-
-  active_lock_directory="$lock_directory"
-  printf '%s\n' "$$" > "$active_lock_directory/owner"
+  shift
+  python3 "$SCRIPT_DIR/checkout-lock.py" \
+    --lock "$lock_directory" \
+    --parent-pid "$$" \
+    --timeout-ms "$lock_timeout_ms" \
+    --poll-ms "$lock_poll_ms" \
+    --legacy-grace-ms "$legacy_lock_grace_ms" \
+    -- "$SCRIPT_DIR/checkout-one-source.sh" "$@"
 }
 
 record_count=0
@@ -125,24 +90,14 @@ while IFS= read -r -d '' component; do
     continue
   fi
 
-  acquire_checkout_lock "$lock_directory"
-  if [[ -e "$checkout_directory" ]]; then
-    verify_checkout "$component" "$commit" "$context" "$dockerfile" "$checkout_directory"
-    log "reusing $component at $commit after concurrent publish"
-    release_checkout_lock
-    continue
-  fi
-
-  active_temporary_directory="$(mktemp -d "$sources_root/.tmp/${component}.${commit}.XXXXXX")"
-  log "fetching $component at $commit"
-  git -C "$active_temporary_directory" init --quiet
-  git -C "$active_temporary_directory" remote add origin "$repository"
-  git -C "$active_temporary_directory" fetch --quiet --depth=1 origin "$commit"
-  git -C "$active_temporary_directory" -c advice.detachedHead=false checkout --quiet --detach FETCH_HEAD
-  verify_checkout "$component" "$commit" "$context" "$dockerfile" "$active_temporary_directory"
-  mv "$active_temporary_directory" "$checkout_directory"
-  active_temporary_directory=""
-  verify_checkout "$component" "$commit" "$context" "$dockerfile" "$checkout_directory"
-  release_checkout_lock
+  run_locked_checkout \
+    "$lock_directory" \
+    "$component" \
+    "$repository" \
+    "$commit" \
+    "$context" \
+    "$dockerfile" \
+    "$checkout_directory" \
+    "$sources_root"
 done < <(python3 "$SCRIPT_DIR/verify-source-lock.py" "records" --lock "$lock_file")
 [[ "$record_count" -eq 5 ]] || die "source lock yielded $record_count records, expected 5"

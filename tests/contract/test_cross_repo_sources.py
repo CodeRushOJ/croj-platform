@@ -1,11 +1,15 @@
+import importlib.util
 import json
 import os
 import pathlib
 import shutil
+import signal
 import stat
 import subprocess
 import tempfile
+import time
 import unittest
+from unittest import mock
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -14,6 +18,14 @@ VALIDATOR = ROOT / "scripts/verify-source-lock.py"
 CHECKOUT = ROOT / "scripts/checkout-sources.sh"
 BUILD = ROOT / "scripts/build-dev-images.sh"
 LOAD = ROOT / "scripts/load-dev-images.sh"
+LOCK_HELPER = ROOT / "scripts/checkout-lock.py"
+
+
+def load_lock_helper():
+    spec = importlib.util.spec_from_file_location("checkout_lock", LOCK_HELPER)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 COMPONENTS = ("frontend", "backend", "judging-server", "sandbox", "docs")
 REPOSITORIES = {
@@ -216,11 +228,316 @@ class GitFixtureMixin:
 
 
 class CrossRepositoryCheckoutTest(GitFixtureMixin, unittest.TestCase):
-    def checkout(self):
+    def checkout(self, environment=None):
         return run(
             [CHECKOUT, "--lock", self.lock, "--root", self.sources],
-            env=self.environment,
+            env=environment or self.environment,
         )
+
+    def assert_checkout_ignores_incomplete_legacy_owner(self, owner_contents):
+        component_root = self.sources / "frontend"
+        lock_directory = component_root / f".{self.commits['frontend']}.lock"
+        lock_directory.mkdir(parents=True)
+        if owner_contents is not None:
+            (lock_directory / "owner").write_text(owner_contents)
+        environment = self.environment.copy()
+        environment.update(
+            {
+                "CODERUSHOJ_CHECKOUT_LOCK_TIMEOUT_MS": "500",
+                "CODERUSHOJ_CHECKOUT_LOCK_POLL_MS": "10",
+                "CODERUSHOJ_CHECKOUT_LOCK_LEGACY_GRACE_MS": "20",
+            }
+        )
+        process = subprocess.Popen(
+            [str(CHECKOUT), "--lock", str(self.lock), "--root", str(self.sources)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        )
+        try:
+            stdout, stderr = process.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            stdout, stderr = process.communicate()
+            self.fail("checkout remained blocked by incomplete owner metadata\n" + stdout + stderr)
+        self.assertEqual(0, process.returncode, stdout + stderr)
+
+    def test_ownerless_legacy_lock_does_not_block_checkout(self):
+        self.assert_checkout_ignores_incomplete_legacy_owner(None)
+
+    def test_partially_written_legacy_owner_does_not_block_checkout(self):
+        self.assert_checkout_ignores_incomplete_legacy_owner("wri")
+
+    def test_owner_completed_within_grace_is_not_reclaimed(self):
+        component_root = self.sources / "frontend"
+        lock_directory = component_root / f".{self.commits['frontend']}.lock"
+        lock_directory.mkdir(parents=True)
+        environment = self.environment.copy()
+        environment.update(
+            {
+                "CODERUSHOJ_CHECKOUT_LOCK_TIMEOUT_MS": "250",
+                "CODERUSHOJ_CHECKOUT_LOCK_POLL_MS": "10",
+                "CODERUSHOJ_CHECKOUT_LOCK_LEGACY_GRACE_MS": "100",
+            }
+        )
+        process = subprocess.Popen(
+            [str(CHECKOUT), "--lock", str(self.lock), "--root", str(self.sources)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        )
+        owner = lock_directory / "owner"
+        time.sleep(0.02)
+        owner.write_text(f"{os.getpid()}\n")
+
+        stdout, stderr = process.communicate(timeout=2)
+
+        self.assertNotEqual(0, process.returncode, stdout + stderr)
+        self.assertTrue(lock_directory.is_dir())
+        self.assertEqual(str(os.getpid()), owner.read_text().strip())
+
+    def test_sigkill_of_helper_keeps_lock_in_inherited_critical_child(self):
+        lock_file = self.base / "crash-safe.lock"
+        waiter_ready = self.base / "waiter.ready"
+        child_started = self.base / "child.started"
+        child_release = self.base / "child.release"
+        critical_child = self.write_executable(
+            "critical-child",
+            'touch "$CHILD_STARTED"\n'
+            'while [[ ! -f "$CHILD_RELEASE" ]]; do sleep 0.01; done\n',
+        )
+
+        def helper_command(ready=None, command=None):
+            arguments = [
+                "python3",
+                str(LOCK_HELPER),
+                "--lock",
+                str(lock_file),
+                "--parent-pid",
+                str(os.getpid()),
+                "--timeout-ms",
+                "1000",
+                "--poll-ms",
+                "10",
+                "--legacy-grace-ms",
+                "20",
+            ]
+            if ready is not None:
+                arguments.extend(("--ready", str(ready)))
+            if command is not None:
+                arguments.extend(("--", str(command)))
+            return arguments
+
+        environment = self.environment.copy()
+        environment.update(
+            {"CHILD_STARTED": str(child_started), "CHILD_RELEASE": str(child_release)}
+        )
+        holder = subprocess.Popen(
+            helper_command(command=critical_child),
+            stderr=subprocess.PIPE,
+            text=True,
+            env=environment,
+        )
+        waiter = None
+        try:
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline and not child_started.exists():
+                if holder.poll() is not None:
+                    self.fail(holder.stderr.read())
+                time.sleep(0.01)
+            self.assertTrue(child_started.exists())
+            waiter = subprocess.Popen(
+                helper_command(ready=waiter_ready), stderr=subprocess.PIPE, text=True
+            )
+            time.sleep(0.05)
+            self.assertFalse(waiter_ready.exists(), "waiter acquired a lock held by child")
+
+            holder.kill()
+            holder.wait(timeout=2)
+            time.sleep(0.05)
+            self.assertFalse(
+                waiter_ready.exists(),
+                "helper death released the lock while its critical child was still running",
+            )
+            child_release.touch()
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline and not waiter_ready.exists():
+                if waiter.poll() is not None:
+                    self.fail(waiter.stderr.read())
+                time.sleep(0.01)
+            self.assertTrue(waiter_ready.exists())
+        finally:
+            child_release.touch(exist_ok=True)
+            if holder.poll() is None:
+                holder.kill()
+                holder.wait(timeout=2)
+            if waiter is not None and waiter.poll() is None:
+                waiter.terminate()
+                waiter.wait(timeout=2)
+            if holder.stderr:
+                holder.stderr.close()
+            if waiter is not None and waiter.stderr:
+                waiter.stderr.close()
+
+    def test_sigkill_of_parent_cancels_helper_waiting_for_lock(self):
+        lock_file = self.base / "parent-crash.lock"
+        blocker_ready = self.base / "blocker.ready"
+        orphan_ready = self.base / "orphan.ready"
+        orphan_pid_file = self.base / "orphan.pid"
+        helper_arguments = [
+            "--lock",
+            str(lock_file),
+            "--timeout-ms",
+            "1000",
+            "--poll-ms",
+            "10",
+            "--legacy-grace-ms",
+            "20",
+        ]
+        blocker = subprocess.Popen(
+            [
+                "python3",
+                str(LOCK_HELPER),
+                *helper_arguments,
+                "--ready",
+                str(blocker_ready),
+                "--parent-pid",
+                str(os.getpid()),
+            ]
+        )
+        parent = None
+        orphan_pid = None
+        try:
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline and not blocker_ready.exists():
+                time.sleep(0.01)
+            self.assertTrue(blocker_ready.exists())
+            wrapper = self.write_executable(
+                "waiting-parent",
+                'python3 "$LOCK_HELPER" "$@" --ready "$ORPHAN_READY" --parent-pid "$$" &\n'
+                'child="$!"\n'
+                'printf \'%s\\n\' "$child" > "$ORPHAN_PID_FILE"\n'
+                'wait "$child"\n',
+            )
+            environment = self.environment.copy()
+            environment.update(
+                {
+                    "LOCK_HELPER": str(LOCK_HELPER),
+                    "ORPHAN_READY": str(orphan_ready),
+                    "ORPHAN_PID_FILE": str(orphan_pid_file),
+                }
+            )
+            parent = subprocess.Popen(
+                [str(wrapper), *helper_arguments],
+                env=environment,
+                stderr=subprocess.DEVNULL,
+            )
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline and not orphan_pid_file.exists():
+                time.sleep(0.01)
+            self.assertTrue(orphan_pid_file.exists())
+            orphan_pid = int(orphan_pid_file.read_text().strip())
+            self.assertFalse(orphan_ready.exists())
+
+            parent.kill()
+            parent.wait(timeout=2)
+            deadline = time.monotonic() + 0.5
+            while time.monotonic() < deadline:
+                try:
+                    os.kill(orphan_pid, 0)
+                except ProcessLookupError:
+                    break
+                time.sleep(0.01)
+            else:
+                self.fail("orphaned helper kept waiting after its parent was killed")
+        finally:
+            if parent is not None and parent.poll() is None:
+                parent.kill()
+                parent.wait(timeout=2)
+            if orphan_pid is not None:
+                try:
+                    os.kill(orphan_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            if blocker.poll() is None:
+                blocker.terminate()
+                blocker.wait(timeout=2)
+
+    def test_legacy_owner_write_during_quarantine_fails_closed_without_overwriting_later_path(self):
+        lock_helper = load_lock_helper()
+        lock_directory = self.base / "legacy.lock"
+        lock_directory.mkdir()
+        owner = lock_directory / "owner"
+        owner.write_text("wri")
+        expected = lock_helper.legacy_snapshot(lock_directory)
+        real_rename = lock_helper.os.rename
+        rename_calls = 0
+
+        def racing_rename(source, destination):
+            nonlocal rename_calls
+            if rename_calls == 0:
+                owner.write_text(f"{os.getpid()}\n")
+            rename_calls += 1
+            result = real_rename(source, destination)
+            if rename_calls == 1:
+                lock_directory.mkdir()
+            return result
+
+        with mock.patch.object(lock_helper.os, "rename", side_effect=racing_rename):
+            with self.assertRaisesRegex(RuntimeError, "retained for inspection"):
+                lock_helper.quarantine_legacy_lock(lock_directory, expected)
+
+        self.assertTrue(lock_directory.is_dir())
+        self.assertEqual([], list(lock_directory.iterdir()))
+        quarantines = list(self.base.glob("legacy.lock.stale.*"))
+        self.assertEqual(1, len(quarantines))
+        self.assertEqual(
+            str(os.getpid()), (quarantines[0] / "owner").read_text().strip()
+        )
+        with self.assertRaisesRegex(RuntimeError, "retained legacy quarantine"):
+            lock_helper.open_lock_file(
+                lock_directory,
+                deadline=time.monotonic() + 0.1,
+                poll_seconds=0.01,
+                legacy_grace_ms=20,
+                parent_pid=os.getppid(),
+            )
+
+    def test_recent_partial_owner_update_receives_the_full_legacy_grace(self):
+        lock_helper = load_lock_helper()
+        lock_directory = self.base / "legacy.lock"
+        lock_directory.mkdir()
+        owner = lock_directory / "owner"
+        owner.write_text("w")
+        old = time.time() - 60
+        os.utime(lock_directory, (old, old))
+        owner.write_text("wri")
+
+        snapshot = lock_helper.legacy_snapshot(lock_directory)
+
+        self.assertFalse(lock_helper.legacy_is_stale(snapshot, grace_ms=1000))
+
+    def test_lock_timing_environment_requires_safe_positive_milliseconds(self):
+        cases = (
+            ({"CODERUSHOJ_CHECKOUT_LOCK_TIMEOUT_MS": "0"}, "timeout"),
+            ({"CODERUSHOJ_CHECKOUT_LOCK_POLL_MS": "fast"}, "poll"),
+            (
+                {
+                    "CODERUSHOJ_CHECKOUT_LOCK_POLL_MS": "20",
+                    "CODERUSHOJ_CHECKOUT_LOCK_LEGACY_GRACE_MS": "10",
+                },
+                "grace",
+            ),
+        )
+        for overrides, message in cases:
+            with self.subTest(overrides=overrides):
+                environment = self.environment.copy()
+                environment.update(overrides)
+                result = self.checkout(environment)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(message, result.stderr)
 
     def test_checkout_uses_detached_commit_addressed_directories_and_is_idempotent(self):
         first = self.checkout()

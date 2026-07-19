@@ -21,6 +21,20 @@ make smoke
 
 当前平台底座的 MySQL、Redis、RocketMQ、SeaweedFS、Gateway API 和 Envoy Gateway 已在三节点 Kind 集群通过真实冒烟测试。本地 profile 还提供不出网的 Mailpit 邮件捕获器。应用 Chart 已覆盖前端、后端、文档、异步 REST 判题服务和两副本沙箱；发布环境必须传入 CI 产出的镜像 digest。
 
+## 不可变跨仓库构建
+
+`config/source-lock.json` 是五个开发镜像唯一的源码输入。每项只接受 CodeRushOJ 官方 HTTPS 仓库、40 位小写 Git commit、受约束的构建路径和 Chart 使用的精确 `:dev` 镜像名；branch、tag 和 `latest` 都不能作为跨仓库验收真相。
+
+```bash
+make source-verify
+make source-checkout
+make images-build
+# 仅在目标 Kind 集群已经存在时执行
+make images-load
+```
+
+源码按 `<组件>/<commit>` 放在 `.workspace/sources/`，不会覆盖开发者已有仓库。`images-build` 会先做幂等 checkout，再用 Buildx 构建五个镜像并写入 OCI source/revision 标签；`images-load` 只校验本地镜像并载入已有集群，不会创建或启动 Kind 集群。完整更新与故障处理见[快速开始](docs/guide/quickstart.md#不可变源码与开发镜像)。
+
 ## 项目状态
 
 - 当前平台版本：`0.1.0`
@@ -32,6 +46,7 @@ make smoke
 
 ```bash
 make validate
+make source-verify
 make smoke
 ```
 

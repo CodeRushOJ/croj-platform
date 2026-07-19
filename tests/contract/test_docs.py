@@ -80,6 +80,9 @@ class DocumentationContractTest(unittest.TestCase):
         self.assertIn("CODERUSHOJ_DOCS_BASE", workflow)
         self.assertIn("/croj-platform/", workflow)
         self.assertIn("path: docs/.vitepress/dist", workflow)
+        self.assertIn("group: pages-${{ github.repository }}", workflow)
+        self.assertIn("cancel-in-progress: false", workflow)
+        self.assertNotIn("pages-${{ github.ref }}", workflow)
 
     def test_quickstart_has_docker_and_kubernetes_paths(self):
         quickstart = (DOCS / "guide/quickstart.md").read_text()

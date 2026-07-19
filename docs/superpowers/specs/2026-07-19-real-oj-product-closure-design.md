@@ -48,7 +48,30 @@
 - `POST /api/v1/admin/problems/{problemId}/publish`
 - `GET /api/v1/problems/{problemNo}`
 
-### 3.2 提交与判题
+### 3.2 可扩展题目导入
+
+导入不是绕过题目工作台的第二套写入逻辑。所有外部格式先由解析器转换成统一的 `ProblemImportDraft`，经过预检和管理员确认后，再创建 CodeRushOJ 草稿版本、测试包并走相同的发布门禁。
+
+首批格式：
+
+1. `FPS_XML`：准确兼容 FreeProblemSet FPS 1.1/1.2。覆盖题面、时/内存限制、多组样例、隐藏测试、内嵌图片、来源、标准解、代码模板、SPJ/TPJ/Interactor 和远程题目标识。
+2. `CODERUSH_PACKAGE`：CodeRushOJ 原生 ZIP，使用版本化 JSON manifest，适合完整无损导入导出。
+3. `ICPC_PACKAGE`：兼容 `problem.yaml`、statement、sample/secret data 的 ICPC/DOMjudge/Kattis 风格题包。
+4. `POLYGON_PACKAGE`：兼容 Polygon 导出包的 `problem.xml`、statements、solutions 和 tests。
+
+解析器使用 SPI/注册表隔离格式差异，并输出统一的能力与警告列表。无法无损映射的字段不得静默丢失；预检结果必须标明错误、警告、题目数、用例数、资源大小、检测格式和摘要。批量导入采用作业模型，单题失败不能留下已发布的半成品。
+
+安全约束：
+
+- XML 解析禁用 DTD、外部实体、XInclude 和网络访问，限制节点深度、文本长度和题目数，防止 XXE 与实体扩展攻击。
+- ZIP 继续执行路径、链接、文件数、压缩比、展开大小和单文件大小限制。
+- HTML/Markdown 在服务端净化；图片只允许白名单 MIME 并重新生成安全对象键。
+- SPJ、Interactor、标准解和模板只作为受控资源存储，导入阶段绝不执行。
+- 保存来源格式、来源 URL、导入器版本、原始包 SHA-256 和授权/署名元数据，支持审计与幂等重试。
+
+FreeProblemSet 兼容基线固定到上游提交 `7782b3815fd40f5bba95b5d7b90e3fbefafae656`。其 README 将 FPS 定义为 LGPL-3.0 的开放交换格式，并列出 HUSTOJ、Hydro、OpenJudger 和 QDUOJ 的兼容性；实现必须保留格式署名与许可证说明。
+
+### 3.3 提交与判题
 
 - 提交记录固定 `problemVersionId` 和 `testBundleId`，后续发布不得改变历史判题语义。
 - 数据库事务通过 outbox 记录待发送事件；发布器向 MQ 发送版本化消息并带幂等键。
@@ -56,7 +79,7 @@
 - 回调以提交 ID + 判题 attempt 幂等，旧 attempt 不得覆盖新 attempt。
 - 前端先以短轮询实现结果更新，保留升级 SSE 的接口边界。
 
-### 3.3 讨论、题解与公告
+### 3.4 讨论、题解与公告
 
 - 讨论主题显式使用 `resourceType` + `resourceId` 关联 `PROBLEM`、`CONTEST` 或 `GENERAL`。
 - 题目详情的讨论标签仅查询当前题目的主题；比赛讨论同理。
@@ -109,4 +132,3 @@ Pages 包含：快速开始、Compose 开发、Kind 部署、生产 Helm、架�
 - GitHub Pages 不承载动态 OJ 后端。
 - 不以 mock 数据、内存数据库或手工修改数据库作为验收路径。
 - 不在本阶段导入大规模第三方题库；先完成可审计的手工题目/测试包闭环，再接入 FreeProblemSet 导入器。
-

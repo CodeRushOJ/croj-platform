@@ -1,0 +1,59 @@
+{{- if and .Values.applications.enabled .Values.bootstrapAdmin.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-admin-bootstrap
+  labels:
+    {{- include "coderushoj.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: admin-bootstrap
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "coderushoj.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: admin-bootstrap
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: bootstrap-admin
+          image: {{ include "coderushoj.image" (dict "image" .Values.images.backend "profile" .Values.deploymentProfile) }}
+          imagePullPolicy: {{ .Values.images.backend.pullPolicy }}
+          env:
+            - name: CROJ_MODE
+              value: "bootstrap-admin"
+            - name: TMPDIR
+              value: /tmp
+            - name: DATABASE_URL
+              value: {{ printf "jdbc:mysql://%s:%v/%s?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false" .Values.dependencies.mysql.host .Values.dependencies.mysql.port .Values.dependencies.mysql.database | quote }}
+            - name: DATABASE_USERNAME
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: mysql-username}}
+            - name: DATABASE_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: mysql-password}}
+            - name: BOOTSTRAP_ADMIN_USERNAME
+              valueFrom: {secretKeyRef: {name: {{ .Values.bootstrapAdmin.secretName }}, key: username}}
+            - name: BOOTSTRAP_ADMIN_EMAIL
+              valueFrom: {secretKeyRef: {name: {{ .Values.bootstrapAdmin.secretName }}, key: email}}
+            - name: BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ .Values.bootstrapAdmin.secretName }}, key: password}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources: {{- toYaml .Values.backend.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 256Mi}
+{{- end }}

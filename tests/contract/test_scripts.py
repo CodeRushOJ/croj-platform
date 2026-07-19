@@ -13,6 +13,7 @@ SCRIPTS = (
     "scripts/cluster-down.sh",
     "scripts/install-gateway.sh",
     "scripts/generate-secrets.sh",
+    "scripts/bootstrap-admin.sh",
     "scripts/diagnostics.sh",
     "scripts/deploy.sh",
     "tests/smoke/platform.sh",
@@ -72,6 +73,17 @@ class ScriptContractTest(unittest.TestCase):
         self.assertNotIn("| grep -Fxq submission-topic", contents)
         self.assertIn("rocketmq_topics=", contents)
         self.assertIn("running_images=", contents)
+
+    def test_admin_bootstrap_script_is_idempotent_and_never_prints_the_password(self):
+        contents = (ROOT / "scripts/bootstrap-admin.sh").read_text()
+        self.assertIn("bootstrapAdmin.enabled=true", contents)
+        self.assertIn('bootstrapAdmin.secretName="$bootstrap_secret_name"', contents)
+        self.assertIn("templates/admin-bootstrap-job.yaml", contents)
+        self.assertIn("condition=complete", contents)
+        self.assertIn("--rerun", contents)
+        self.assertNotIn("cat \"$secret_dir/bootstrap-admin-password\"", contents)
+        self.assertNotRegex(contents, r"echo\s+.*BOOTSTRAP_ADMIN_PASSWORD")
+        self.assertNotIn("delete coderushoj/coderushoj-admin-bootstrap-secret", contents)
 
     @unittest.skipUnless(shutil.which("shellcheck"), "ShellCheck is not installed")
     def test_shellcheck_has_no_findings(self):

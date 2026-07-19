@@ -89,6 +89,46 @@ helm upgrade --install coderushoj ./charts/coderushoj \
 
 `values-kind-app.yaml` 使用 `imagePullPolicy: Never`，任何未加载镜像都会立即暴露为部署错误，不会悄悄从不可信标签拉取。跨仓库集成 CI 会在发布前替代这段人工加载流程。
 
+### 创建首个管理员
+
+全新数据库没有默认密码，普通注册也不会自动获得管理权限。后端镜像已部署且 MySQL Ready 后执行：
+
+```bash
+scripts/bootstrap-admin.sh
+```
+
+本地身份固定为 `admin` / `admin@coderushoj.local`，随机密码只写入 Git 忽略且权限为 `0600` 的 `.workspace/secrets/bootstrap-admin-password`。脚本不会打印密码；需要登录时在自己的终端读取该文件。Job 使用专门的 `coderushoj-admin-bootstrap-secret`，只允许 DNS 和 MySQL egress，既不挂 ServiceAccount token，也不把 bootstrap 变量注入长期 Backend Deployment。成功 Job 最多保留十分钟供审计，验证登录后删除身份 Secret：
+
+```bash
+kubectl delete secret coderushoj-admin-bootstrap-secret -n coderushoj
+```
+
+相同身份的后端命令是幂等的，不会重置密码。若需要在修复配置后明确重建 Job，先保留失败日志，再运行 `scripts/bootstrap-admin.sh --rerun`；该参数只删除精确的 `coderushoj/coderushoj-admin-bootstrap` Job，不会删除用户或数据库数据。
+
+不要丢失本地密码文件：Job 重放不会轮换首个管理员密码。如果文件遗失，应使用正常的密码找回/轮换流程；重新生成 bootstrap Secret 不会、也不应绕过这一限制。
+
+生产环境不要使用本地生成的身份。管理员应先在私有 Secret 管理系统生成唯一用户名、邮箱和至少 12 字符的强密码，再创建同名三键 Secret：
+
+```bash
+kubectl create secret generic coderushoj-admin-bootstrap-secret \
+  --namespace coderushoj \
+  --from-file=username=/secure/path/username \
+  --from-file=email=/secure/path/email \
+  --from-file=password=/secure/path/password
+
+helm template coderushoj ./charts/coderushoj \
+  --namespace coderushoj \
+  --values /secure/path/production-values.yaml \
+  --set applications.enabled=true \
+  --set bootstrapAdmin.enabled=true \
+  --show-only templates/admin-bootstrap-job.yaml \
+  | kubectl apply --filename -
+kubectl wait -n coderushoj --for=condition=complete \
+  job/coderushoj-admin-bootstrap --timeout=6m
+```
+
+生产镜像仍由 values 中的 digest 固定。成功后删除 Job Secret，并通过正常的认证接口轮换密码；不要把初始密码写进 values、Issue、命令行参数或 Git。
+
 部署会完成：
 
 1. 创建 1 个控制平面和 2 个同时带 `coderushoj.io/judge-worker=true`、`coderushoj.io/sandbox=true` 标签的工作节点；

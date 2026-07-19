@@ -127,6 +127,57 @@ class ApplicationRenderTest(unittest.TestCase):
         ):
             self.assertIn(f"name: {setting}\n              value: \"false\"", rendered)
 
+    def test_first_administrator_job_is_explicit_one_shot_and_secret_only(self):
+        default_render = self.render()
+        self.assertNotIn("name: coderushoj-admin-bootstrap\n", default_render)
+        self.assertNotIn("BOOTSTRAP_ADMIN_PASSWORD", default_render)
+
+        rendered = self.render("--set", "bootstrapAdmin.enabled=true")
+        self.assertIn("kind: Job", rendered)
+        self.assertIn("name: coderushoj-admin-bootstrap\n", rendered)
+        self.assertIn("name: CROJ_MODE\n", rendered)
+        self.assertIn('value: "bootstrap-admin"', rendered)
+        self.assertIn("name: BOOTSTRAP_ADMIN_USERNAME", rendered)
+        self.assertIn("name: BOOTSTRAP_ADMIN_EMAIL", rendered)
+        self.assertIn("name: BOOTSTRAP_ADMIN_PASSWORD", rendered)
+        for key in ("username", "email", "password"):
+            self.assertIn(f"key: {key}", rendered)
+        self.assertIn("name: coderushoj-admin-bootstrap-secret", rendered)
+        self.assertIn("automountServiceAccountToken: false", rendered)
+        self.assertIn("readOnlyRootFilesystem: true", rendered)
+        self.assertIn("restartPolicy: Never", rendered)
+        self.assertIn("backoffLimit: 1", rendered)
+        self.assertIn("activeDeadlineSeconds: 300", rendered)
+        policy_start = rendered.index("name: coderushoj-admin-bootstrap-egress\n")
+        policy_end = rendered.index("name: coderushoj-application-egress\n")
+        bootstrap_policy = rendered[policy_start:policy_end]
+        self.assertIn("port: 3306", bootstrap_policy)
+        self.assertIn("app.kubernetes.io/component: mysql", bootstrap_policy)
+        for forbidden_port in (6379, 7999, 8333, 9876, 50051, 443):
+            self.assertNotIn(f"port: {forbidden_port}", bootstrap_policy)
+
+        backend_start = rendered.index("name: croj-backend\n")
+        bootstrap_start = rendered.index("name: coderushoj-admin-bootstrap\n")
+        backend_manifest = rendered[backend_start:bootstrap_start]
+        self.assertNotIn("BOOTSTRAP_ADMIN_", backend_manifest)
+        self.assertNotIn("CROJ_MODE", backend_manifest)
+
+    def test_bootstrap_job_requires_a_dedicated_secret_name(self):
+        result = subprocess.run(
+            [
+                "helm", "template", "coderushoj", str(CHART),
+                "--namespace", "coderushoj",
+                "--set", "applications.enabled=true",
+                "--set", "bootstrapAdmin.enabled=true",
+                "--set", "bootstrapAdmin.secretName=",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("bootstrapAdmin/secretName", result.stderr)
+
     def test_workloads_have_probes_resources_and_bounded_security_contexts(self):
         rendered = self.render()
         self.assertGreaterEqual(rendered.count("readinessProbe:"), 5)

@@ -44,6 +44,16 @@ write_random_base64_secret() {
   chmod 600 "$path"
 }
 
+write_literal_secret() {
+  local path="$1"
+  local value="$2"
+  if [[ ! -f "$path" ]]; then
+    printf '%s' "$value" >"$path"
+  fi
+  [[ -s "$path" ]] || die "generated secret is empty: $path"
+  chmod 600 "$path"
+}
+
 mkdir -p "$secret_dir"
 chmod 700 "$secret_dir"
 
@@ -63,6 +73,9 @@ write_random_base64_secret "$secret_dir/external-api-auth-pepper-base64" 32
 write_random_base64_secret "$secret_dir/external-idempotency-pepper-base64" 32
 write_random_base64_secret "$secret_dir/external-cursor-key-base64" 32
 write_random_base64_secret "$secret_dir/external-source-key-base64" 32
+write_literal_secret "$secret_dir/bootstrap-admin-username" "admin"
+write_literal_secret "$secret_dir/bootstrap-admin-email" "admin@coderushoj.local"
+write_random_secret "$secret_dir/bootstrap-admin-password" 24
 
 if [[ "$target" == "--files-only" ]]; then
   log "local secret files are ready in $secret_dir"

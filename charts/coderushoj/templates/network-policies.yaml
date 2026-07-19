@@ -68,6 +68,29 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  name: {{ .Release.Name }}-admin-bootstrap-egress
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "coderushoj.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: admin-bootstrap
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: mysql
+      ports:
+        - {protocol: TCP, port: 3306}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: {{ .Release.Name }}-application-egress
 spec:
   podSelector:

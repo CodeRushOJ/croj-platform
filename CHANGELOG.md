@@ -10,6 +10,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Features
 
+- 增加 VitePress GitHub Pages 项目站点，默认使用 `/croj-platform/` 基路径，并支持通过 `CODERUSHOJ_DOCS_BASE` 切换到自定义域名根路径或子路径。
 - 应用 Chart 增加默认关闭的 backend、frontend 与 judging-server Deployment；backend/frontend Service 固定匹配 Gateway 路由，judging 复用 namespace 级 EndpointSlice RBAC 且不暴露公网 Service。
 - 三类应用增加 tag/digest、资源、安全上下文、PDB、拓扑分散/软反亲和、外部 Secret 与版本化 RocketMQ 合同；production 开启时强制不可变 digest。
 - backend 上传目录支持开发 `emptyDir` 与 production `existingClaim` 两种显式模式，production 未提供现有 RWX PVC 时拒绝渲染。
@@ -24,6 +25,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Security
 
+- Pages 工作流将只读构建与 OIDC 部署权限拆分到不同 Job；Pull Request 只构建检查，不接触 `pages: write` 或部署 environment。
 - backend/judging 只从用户提供的 existing Secret key 注入 MySQL、Redis、RocketMQ、JWT、SMTP 与回调 token；values、模板和示例不包含凭据，且二者固定共享 `JUDGE_RESULT_SERVICE_TOKEN` key 契约。
 - 应用 NetworkPolicy 改为显式 opt-in，避免在 kindnet 环境把“策略对象存在”误报为网络隔离生效。
 - sandbox 在默认与 production values 中都保持关闭；production 渲染强制合法 sha256 digest、隔离 `kata-qemu` RuntimeClass、非 root、只读根文件系统、删除 capabilities 且禁止宿主 cgroup 挂载，但在执行器完成 cgroup/seccomp fail-closed 加固前不能作为可运行部署。
@@ -32,6 +34,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Operations
 
+- 增加固定完整 commit SHA 的 Pages Actions、`github-pages` environment、并发控制、手动发布与文档回滚指南；`main` 合并和手动触发才部署。
 - Helm 合约测试覆盖 Service/Pod selector、EndpointSlice 端口、三类 gRPC 探针、开发 cgroup 权限、生产 fail-closed 行为、禁用路径和 values schema。
 - 部署脚本根据 Helm 3/4 自动选择 `--atomic` 或 `--rollback-on-failure`；CI 显式传播 Go 工具安装目录。
 

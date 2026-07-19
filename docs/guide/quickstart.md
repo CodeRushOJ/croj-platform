@@ -70,21 +70,44 @@ make deploy
 make smoke
 ```
 
+基础命令不会尝试拉取尚未发布的应用镜像。开发者完成五个本地镜像构建并载入 Kind 后，再显式启用应用 profile：
+
+```bash
+kind load docker-image \
+  ghcr.io/coderushoj/croj-frontend:dev \
+  ghcr.io/coderushoj/croj-backend:dev \
+  ghcr.io/coderushoj/croj-judging-server:dev \
+  ghcr.io/coderushoj/croj-sandbox:dev \
+  ghcr.io/coderushoj/coderushoj-docs:dev \
+  --name coderushoj
+helm upgrade --install coderushoj ./charts/coderushoj \
+  --namespace coderushoj \
+  --values ./charts/coderushoj/values-kind.yaml \
+  --values ./charts/coderushoj/values-kind-app.yaml \
+  --rollback-on-failure --wait --timeout 10m
+```
+
+`values-kind-app.yaml` 使用 `imagePullPolicy: Never`，任何未加载镜像都会立即暴露为部署错误，不会悄悄从不可信标签拉取。跨仓库集成 CI 会在发布前替代这段人工加载流程。
+
 部署会完成：
 
-1. 创建 1 个控制平面和 2 个带 `coderushoj.io/judge-worker=true` 标签的工作节点；
+1. 创建 1 个控制平面和 2 个同时带 `coderushoj.io/judge-worker=true`、`coderushoj.io/sandbox=true` 标签的工作节点；
 2. 安装校验和固定的 Envoy Gateway v1.8.2 清单；
 3. 生成 Kubernetes Secret，但不在终端打印值；
-4. 安装 MySQL、Redis、RocketMQ 和 SeaweedFS；
+4. 安装 MySQL、Redis、RocketMQ、SeaweedFS 和仅限本地验收的 Mailpit 邮件捕获器；
 5. 创建 `submission-topic` 与 `submission-dead-letter-topic`；
-6. 安装 `coderushoj.local` 的 `/`、`/api`、`/docs` 路由；
-7. 验证 SQL、缓存、消息主题、S3 读写和 Gateway 状态。
+6. 在显式启用应用 profile 后，安装前端、后端、文档、异步 REST 判题服务和两个长期运行的沙箱副本；
+7. 创建 `sandbox-workers` headless Service，由判题服务通过 Service DNS 和 gRPC `round_robin` 使用 EndpointSlice；
+8. 安装 `coderushoj.local`、`docs.coderushoj.local` 路由；Kind profile 额外开放 `judge.coderushoj.local/api/v1`；
+9. 验证 SQL、缓存、消息主题、S3 读写、工作负载探针和 Gateway 状态。
 
 查看状态：
 
 ```bash
-kubectl get nodes -L coderushoj.io/judge-worker
+kubectl get nodes -L coderushoj.io/judge-worker,coderushoj.io/sandbox
 kubectl get pods,pvc -n coderushoj
+kubectl get service sandbox-workers -n coderushoj
+kubectl get endpointslice -n coderushoj -l kubernetes.io/service-name=sandbox-workers
 kubectl get gateway,httproute -n coderushoj
 helm list -n coderushoj
 ```
@@ -93,9 +116,28 @@ helm list -n coderushoj
 
 ```bash
 curl -H 'Host: coderushoj.local' http://127.0.0.1:8080/
+curl -H 'Host: docs.coderushoj.local' http://127.0.0.1:8080/
+read -r -s CROJ_EXTERNAL_API_KEY
+curl -H 'Host: judge.coderushoj.local' \
+  -H "Authorization: Bearer $CROJ_EXTERNAL_API_KEY" \
+  http://127.0.0.1:8080/api/v1/capabilities
+unset CROJ_EXTERNAL_API_KEY
 ```
 
-在应用镜像接入前，入口返回后端引用不存在属于阶段性预期；Gateway 本身必须为 `Programmed=True`。
+外部判题 REST 在默认 values 中只创建 ClusterIP，不对集群外公开；`values-kind.yaml` 仅为本地联调显式开放 HTTP。capabilities 也要求具有 `capabilities:read` scope 的 Bearer API key，不能匿名调用。租户和 API key 由 `croj-judging-server` 的 `judge-admin` 创建，secret 只显示一次。生产环境必须预先创建覆盖主站/文档域名的 `coderushoj-web-tls` Secret，并为 Judge 配置独立 TLS Secret、网络出口策略和 CI 发布的镜像 digest，不能照搬本地 HTTP 配置。
+
+本地注册和邮箱验证码会进入 Mailpit，不会发到公网。需要人工查看时临时转发 UI；结束 `kubectl port-forward` 即可，不需要暴露 Ingress：
+
+```bash
+kubectl port-forward -n coderushoj service/coderushoj-infra-mailpit 8025:8025
+# 浏览器打开 http://127.0.0.1:8025
+```
+
+生产 profile 不部署 Mailpit，并对空的 `backend.smtp.host`/`backend.smtp.username` fail closed。部署者必须在私有 values 中设置真实 SMTP host、port、username、auth/STARTTLS/SSL 模式，并在 `coderushoj-production-secrets` 中提供 `smtp-password`；不要把密码写入 values 或 Git。
+
+沙箱默认依赖专用节点标签而不假设集群存在某个 RuntimeClass。若生产集群已经由管理员安装隔离运行时，可设置 `sandbox.runtimeClassName`；不要填写一个未注册的名字，否则 Pod 会保持 Pending。
+
+本地 Secret 生成器还会创建 JWT、内部判题回调 token、Mailpit/SMTP 密码和四个 32-byte Base64 外部 API 密钥材料。它只显示文件路径，不打印值；已有文件不会被静默轮换。
 
 ## 升级
 
@@ -124,7 +166,7 @@ make smoke
 
 ## 构建多架构镜像
 
-各原仓库的 CI 最终使用 Buildx 发布 `linux/amd64,linux/arm64` 镜像，部署清单固定 SemVer 或 digest，不使用 `latest`：
+各原仓库的 CI 使用 Buildx 发布 `linux/amd64,linux/arm64` 镜像，开发 values 固定 SemVer 且不使用 `latest`；生产 profile 缺少任意镜像 digest 时 Helm 会直接拒绝渲染：
 
 ```bash
 docker buildx create --name coderushoj-builder --use

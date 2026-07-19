@@ -8,6 +8,30 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Features
+
+- 应用 Helm Chart 现已渲染前端、后端、VitePress 文档、异步 REST 判题服务及双副本 gRPC 沙箱，并提供 Service、探针、资源边界和核心多副本组件 PDB。
+- 本地基础设施 profile 增加固定版本 Mailpit，捕获注册/验证码邮件而不向公网发送；生产 profile 强制由运维提供真实 SMTP 地址、账号和 Secret。
+- 增加 `sandbox-workers` headless Service；判题服务通过 Kubernetes Service DNS 和 gRPC `round_robin` 使用 Ready EndpointSlice，不再需要默认 Kubernetes API 权限。
+- 为第三方 OJ 增加独立 Judge hostname 与 `/api/v1` 路由；默认只提供集群内 Service，Kind profile 才显式开放本地 HTTP。
+
+### Security
+
+- 生产 values 强制所有应用镜像使用 digest，任何缺失都会使 Helm 渲染失败。
+- 默认 profile 不拉取未发布的应用镜像；Kind 应用 profile 固定 `:dev` 且使用 `imagePullPolicy: Never`，要求先显式载入本地构建产物。
+- 本地 Secret 生成器新增 JWT、内部结果 token 和四项 32-byte Base64 外部 API 密钥材料，保持幂等、静默和 `0600` 权限。
+- 应用工作负载默认关闭 ServiceAccount token 与 service links；NetworkPolicy 限制沙箱入口、依赖访问和公开 Webhook 出口。
+
+### Operations
+
+- Kind 的两个工作节点新增 `coderushoj.io/sandbox=true` 专用调度标签。
+- 文档更新为长期运行沙箱、异步 REST、稳定 Webhook outbox 和 headless Service 架构，并记录本地/生产暴露差异。
+
+### Known Limitations
+
+- 这些应用清单已通过 Helm/契约测试，但在跨仓库集成镜像和 Judge v5 migration 完成前尚未执行完整 Kind 端到端判题验收。
+- 现有头像接口仍使用单副本后端的 RWO PVC；切换为 S3 对象存储适配器前，后端不具备无状态多副本能力。
+
 ## [0.1.0] - 2026-07-18
 
 ### Features

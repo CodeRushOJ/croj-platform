@@ -19,7 +19,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Security
 
-- 源码锁的 Shell 传递改为 NUL 分隔记录并拒绝全部 ASCII 控制字符；Kind 载入前强制核对镜像 OCI source/revision，checkout 缓存通过互斥锁并发发布并二次验证。
+- 源码锁的 Shell 传递改为 NUL 分隔记录并拒绝全部 ASCII 控制字符；Kind 载入前强制核对镜像 OCI source/revision，checkout 缓存通过崩溃自动释放的内核文件锁并发发布并二次验证，旧 owner 目录只在宽限期和双重快照确认后隔离回收。
 - 源码锁校验会拒绝可变 ref、非 CodeRushOJ 远端、未知字段、不安全相对路径、重复镜像和不完整组件集合；已有 checkout 不干净时保持现场并 fail closed。
 - 生产 values 强制所有应用镜像使用 digest，任何缺失都会使 Helm 渲染失败。
 - 默认 profile 不拉取未发布的应用镜像；Kind 应用 profile 固定 `:dev` 且使用 `imagePullPolicy: Never`，要求先显式载入本地构建产物。

@@ -103,6 +103,8 @@ make source-checkout
 CODERUSHOJ_SOURCES_DIR=/absolute/cache/path make source-checkout
 ```
 
+并发 checkout 使用由独立 helper 持有的内核文件锁；shell 被终止或崩溃后锁会由内核自动释放。升级自旧版本时，遗留的 owner 目录会经过宽限期、双重快照和原子 quarantine 后再清理。默认等待 300 秒、轮询 50 毫秒、遗留目录宽限 1000 毫秒；CI 如需更短的失败反馈，可分别设置 `CODERUSHOJ_CHECKOUT_LOCK_TIMEOUT_MS`、`CODERUSHOJ_CHECKOUT_LOCK_POLL_MS`、`CODERUSHOJ_CHECKOUT_LOCK_LEGACY_GRACE_MS`，三者必须为正整数且宽限期不能短于轮询间隔。
+
 构建会自动执行上述校验和 checkout，随后逐个调用 `docker buildx build --load`，并把锁定仓库与 commit 写入 OCI `source`/`revision` 标签：
 
 ```bash

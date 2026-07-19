@@ -31,6 +31,23 @@ python3 "$SCRIPT_DIR/verify-source-lock.py" validate --lock "$lock_file" >/dev/n
 mkdir -p "$sources_root/.tmp"
 sources_root="$(cd "$sources_root" && pwd)"
 active_temporary_directory=""
+active_lock_directory=""
+
+release_checkout_lock() {
+  local owner=""
+  if [[ -z "$active_lock_directory" || ! -d "$active_lock_directory" ]]; then
+    active_lock_directory=""
+    return
+  fi
+  if [[ -f "$active_lock_directory/owner" ]]; then
+    owner="$(cat "$active_lock_directory/owner")"
+  fi
+  if [[ -z "$owner" || "$owner" == "$$" ]]; then
+    rm -f -- "$active_lock_directory/owner"
+    rmdir "$active_lock_directory" 2>/dev/null || true
+  fi
+  active_lock_directory=""
+}
 
 cleanup() {
   if [[ -n "$active_temporary_directory" && -d "$active_temporary_directory" ]]; then
@@ -39,6 +56,7 @@ cleanup() {
       *) log "refusing to remove unexpected temporary path: $active_temporary_directory" ;;
     esac
   fi
+  release_checkout_lock
 }
 trap cleanup EXIT
 
@@ -62,14 +80,56 @@ verify_checkout() {
     die "$component Dockerfile is missing: $checkout_directory/$context/$dockerfile"
 }
 
-while IFS=$'\t' read -r component repository commit context dockerfile _image; do
+acquire_checkout_lock() {
+  local lock_directory="$1"
+  local attempts=0
+  local owner=""
+  local stale_directory=""
+
+  while ! mkdir "$lock_directory" 2>/dev/null; do
+    owner="$(cat "$lock_directory/owner" 2>/dev/null || true)"
+    if [[ "$owner" =~ ^[0-9]+$ ]] && ! kill -0 "$owner" 2>/dev/null; then
+      stale_directory="${lock_directory}.stale.$$.$attempts"
+      if mv "$lock_directory" "$stale_directory" 2>/dev/null; then
+        rm -f -- "$stale_directory/owner"
+        rmdir "$stale_directory" 2>/dev/null || \
+          die "stale checkout lock contains unexpected files: $stale_directory"
+        continue
+      fi
+    fi
+    attempts=$((attempts + 1))
+    [[ "$attempts" -lt 6000 ]] || die "timed out waiting for checkout lock: $lock_directory"
+    sleep 0.05
+  done
+
+  active_lock_directory="$lock_directory"
+  printf '%s\n' "$$" > "$active_lock_directory/owner"
+}
+
+record_count=0
+while IFS= read -r -d '' component; do
+  IFS= read -r -d '' repository || die "source lock record is truncated after component"
+  IFS= read -r -d '' commit || die "source lock record is truncated after repository"
+  IFS= read -r -d '' context || die "source lock record is truncated after commit"
+  IFS= read -r -d '' dockerfile || die "source lock record is truncated after context"
+  IFS= read -r -d '' _image || die "source lock record is truncated after dockerfile"
+  record_count=$((record_count + 1))
   component_root="$sources_root/$component"
   checkout_directory="$component_root/$commit"
+  lock_directory="$component_root/.${commit}.lock"
   mkdir -p "$component_root"
 
   if [[ -e "$checkout_directory" ]]; then
     verify_checkout "$component" "$commit" "$context" "$dockerfile" "$checkout_directory"
     log "reusing $component at $commit"
+    continue
+  fi
+
+  acquire_checkout_lock "$lock_directory"
+  if [[ -e "$checkout_directory" ]]; then
+    verify_checkout "$component" "$commit" "$context" "$dockerfile" "$checkout_directory"
+    log "reusing $component at $commit after concurrent publish"
+    release_checkout_lock
     continue
   fi
 
@@ -82,4 +142,7 @@ while IFS=$'\t' read -r component repository commit context dockerfile _image; d
   verify_checkout "$component" "$commit" "$context" "$dockerfile" "$active_temporary_directory"
   mv "$active_temporary_directory" "$checkout_directory"
   active_temporary_directory=""
-done < <(python3 "$SCRIPT_DIR/verify-source-lock.py" rows --lock "$lock_file")
+  verify_checkout "$component" "$commit" "$context" "$dockerfile" "$checkout_directory"
+  release_checkout_lock
+done < <(python3 "$SCRIPT_DIR/verify-source-lock.py" "records" --lock "$lock_file")
+[[ "$record_count" -eq 5 ]] || die "source lock yielded $record_count records, expected 5"

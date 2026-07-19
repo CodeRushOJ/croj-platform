@@ -1,6 +1,7 @@
 import json
 import os
 import pathlib
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -116,6 +117,50 @@ class SourceLockContractTest(unittest.TestCase):
         self.assertIn("safe relative path", result.stderr)
         self.assertIn("CodeRushOJ GitHub repository", result.stderr)
 
+    def test_validator_rejects_ascii_control_characters_before_record_serialization(self):
+        for code_point in (*range(32), 127):
+            control_character = chr(code_point)
+            with self.subTest(code_point=ord(control_character)):
+                with tempfile.TemporaryDirectory() as temporary_directory:
+                    lock = self.valid_lock(temporary_directory)
+                    payload = json.loads(lock.read_text())
+                    payload["sources"]["frontend"]["dockerfile"] = (
+                        "Dockerfile" + control_character + "injected"
+                    )
+                    lock.write_text(json.dumps(payload))
+
+                    result = run(["python3", VALIDATOR, "validate", "--lock", lock])
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("ASCII control", result.stderr)
+
+    def test_validator_rejects_control_characters_in_every_source_text_field(self):
+        for field in ("repository", "commit", "context", "dockerfile", "image"):
+            with self.subTest(field=field):
+                with tempfile.TemporaryDirectory() as temporary_directory:
+                    lock = self.valid_lock(temporary_directory)
+                    payload = json.loads(lock.read_text())
+                    payload["sources"]["frontend"][field] += "\nlog-injection"
+                    lock.write_text(json.dumps(payload))
+
+                    result = run(["python3", VALIDATOR, "validate", "--lock", lock])
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("ASCII control", result.stderr)
+
+    def test_validator_emits_nul_delimited_records_for_shell_consumers(self):
+        records = run(["python3", VALIDATOR, "records", "--lock", LOCK])
+
+        self.assertEqual(0, records.returncode, records.stdout + records.stderr)
+        fields = records.stdout.split("\x00")
+        self.assertEqual("", fields.pop())
+        self.assertEqual(5 * 6, len(fields))
+        self.assertEqual(list(COMPONENTS), fields[0::6])
+        for script in (CHECKOUT, BUILD, LOAD):
+            contents = script.read_text()
+            self.assertIn('"records"', contents)
+            self.assertNotIn('"rows"', contents)
+
 
 class GitFixtureMixin:
     def setUp(self):
@@ -217,6 +262,69 @@ class CrossRepositoryCheckoutTest(GitFixtureMixin, unittest.TestCase):
         self.assertNotEqual(0, second.returncode)
         self.assertIn("not detached", second.stderr)
 
+    def test_concurrent_checkouts_publish_one_clean_exact_cache_entry(self):
+        real_git = shutil.which("git")
+        self.assertIsNotNone(real_git)
+        fetch_log = self.base / "fetch.log"
+        self.write_executable(
+            "git",
+            'if [[ "${1:-}" == "-C" && "${3:-}" == "fetch" ]]; then\n'
+            '  printf \'fetch\\n\' >> "$FETCH_LOG"\n'
+            "  sleep 0.2\n"
+            "fi\n"
+            'exec "$REAL_GIT" "$@"\n',
+        )
+        environment = self.environment.copy()
+        environment.update(
+            {
+                "PATH": self.bin.as_posix() + os.pathsep + environment["PATH"],
+                "REAL_GIT": real_git,
+                "FETCH_LOG": fetch_log.as_posix(),
+            }
+        )
+
+        commands = [
+            str(CHECKOUT),
+            "--lock",
+            str(self.lock),
+            "--root",
+            str(self.sources),
+        ]
+        workers = [
+            subprocess.Popen(
+                commands,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=environment,
+            )
+            for _ in range(2)
+        ]
+        results = [
+            worker.communicate(timeout=30) + (worker.returncode,) for worker in workers
+        ]
+
+        for stdout, stderr, returncode in results:
+            self.assertEqual(0, returncode, stdout + stderr)
+        self.assertEqual(5, len(fetch_log.read_text().splitlines()))
+        for component in COMPONENTS:
+            checkout = self.sources / component / self.commits[component]
+            head = run([real_git, "-C", checkout, "rev-parse", "HEAD"])
+            branch = run([real_git, "-C", checkout, "symbolic-ref", "-q", "HEAD"])
+            status = run(
+                [
+                    real_git,
+                    "-C",
+                    checkout,
+                    "status",
+                    "--porcelain",
+                    "--untracked-files=all",
+                ]
+            )
+            self.assertEqual(self.commits[component], head.stdout.strip())
+            self.assertNotEqual(0, branch.returncode)
+            self.assertEqual("", status.stdout, status.stdout)
+
 
 class CrossRepositoryImageWorkflowTest(GitFixtureMixin, unittest.TestCase):
     def setUp(self):
@@ -224,6 +332,36 @@ class CrossRepositoryImageWorkflowTest(GitFixtureMixin, unittest.TestCase):
         self.command_log = self.base / "commands.log"
         self.environment["PATH"] = self.bin.as_posix() + os.pathsep + self.environment["PATH"]
         self.environment["COMMAND_LOG"] = self.command_log.as_posix()
+
+    def write_docker_inspector(self):
+        cases = []
+        for component in COMPONENTS:
+            cases.append(
+                f"  {IMAGES[component]!r}) printf '%s\\n%s\\n' "
+                f"{self.commits[component]!r} "
+                f"{'https://github.com/CodeRushOJ/' + REPOSITORIES[component] + '.git'!r} ;;"
+            )
+        self.write_executable(
+            "docker",
+            'printf \'docker\' >> "$COMMAND_LOG"\n'
+            'printf \' %q\' "$@" >> "$COMMAND_LOG"\n'
+            'printf \'\\n\' >> "$COMMAND_LOG"\n'
+            '[[ "${1:-}" == image && "${2:-}" == inspect ]]\n'
+            'image="${@: -1}"\n'
+            'if [[ "${PROVENANCE_MODE:-valid}" == missing ]]; then\n'
+            "  printf '<no value>\\n<no value>\\n'\n"
+            "  exit 0\n"
+            "fi\n"
+            'if [[ "${PROVENANCE_MODE:-valid}" == wrong && "$image" == '
+            + repr(IMAGES["frontend"])
+            + " ]]; then\n"
+            "  printf '0000000000000000000000000000000000000000\\nhttps://github.com/CodeRushOJ/croj-frontend.git\\n'\n"
+            "  exit 0\n"
+            "fi\n"
+            "case \"$image\" in\n"
+            + "\n".join(cases)
+            + "\n  *) exit 2 ;;\nesac\n",
+        )
 
     def test_build_uses_all_locked_inputs_and_oci_provenance(self):
         self.write_executable("docker", 'printf \'%q \' "$@" >> "$COMMAND_LOG"\nprintf \'\\n\' >> "$COMMAND_LOG"\n')
@@ -250,10 +388,7 @@ class CrossRepositoryImageWorkflowTest(GitFixtureMixin, unittest.TestCase):
             self.assertTrue(command.endswith(context.as_posix() + " "))
 
     def test_load_checks_images_then_calls_kind_once_without_creating_a_cluster(self):
-        self.write_executable(
-            "docker",
-            '[[ "${1:-}" == image && "${2:-}" == inspect ]]\nprintf \'docker\' >> "$COMMAND_LOG"\nprintf \' %q\' "$@" >> "$COMMAND_LOG"\nprintf \'\\n\' >> "$COMMAND_LOG"\n',
-        )
+        self.write_docker_inspector()
         self.write_executable(
             "kind",
             'printf \'kind\' >> "$COMMAND_LOG"\nprintf \' %q\' "$@" >> "$COMMAND_LOG"\nprintf \'\\n\' >> "$COMMAND_LOG"\n',
@@ -276,6 +411,27 @@ class CrossRepositoryImageWorkflowTest(GitFixtureMixin, unittest.TestCase):
             self.assertIn(image, kind_command)
         self.assertTrue(kind_command.endswith("--name contract-cluster"))
         self.assertNotIn("create", kind_command)
+
+    def test_load_rejects_missing_or_wrong_oci_provenance_before_kind(self):
+        for mode in ("missing", "wrong"):
+            with self.subTest(mode=mode):
+                self.command_log.write_text("")
+                self.write_docker_inspector()
+                self.write_executable(
+                    "kind",
+                    'printf \'kind should-not-run\\n\' >> "$COMMAND_LOG"\n',
+                )
+                environment = self.environment.copy()
+                environment["PROVENANCE_MODE"] = mode
+
+                result = run(
+                    [LOAD, "--lock", self.lock, "--cluster", "contract-cluster"],
+                    env=environment,
+                )
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("provenance", result.stderr)
+                self.assertNotIn("kind should-not-run", self.command_log.read_text())
 
 
 if __name__ == "__main__":

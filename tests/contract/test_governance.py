@@ -107,6 +107,28 @@ class GovernanceContractTest(unittest.TestCase):
         self.assertIn("github.sha", workflow)
         self.assertIn("packages: write", workflow)
 
+    def test_release_uses_pinned_helm_and_publishes_the_default_docs_tag(self):
+        workflow = self.read(".github/workflows/release.yml")
+        helm_setup = (
+            "uses: azure/setup-helm@"
+            "1a275c3b69536ee54be43f2070a358922e12c8d4"
+        )
+        setup_position = workflow.index(helm_setup)
+        package_position = workflow.index("helm package")
+        self.assertLess(setup_position, package_position)
+        setup_block = workflow[setup_position:package_position]
+        self.assertIn("version: v4.2.3", setup_block)
+
+        version = (ROOT / "VERSION").read_text().strip()
+        values = self.read("charts/coderushoj/values.yaml")
+        docs_images = values.split("images:", 1)[1].split("services:", 1)[0]
+        docs_image = docs_images.split("  docs:", 1)[1]
+        self.assertIn(f"tag: v{version}", docs_image)
+        self.assertIn(
+            "${{ env.DOCS_IMAGE }}:${{ github.ref_name }}",
+            workflow,
+        )
+
     def test_first_release_version_and_notes_match_shipped_platform(self):
         version = (ROOT / "VERSION").read_text().strip()
         self.assertEqual("0.1.0", version)

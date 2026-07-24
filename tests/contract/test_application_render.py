@@ -150,7 +150,9 @@ class ApplicationRenderTest(unittest.TestCase):
         rendered = self.render()
         policy_names = (
             "coderushoj-default-deny",
-            "coderushoj-web-ingress",
+            "coderushoj-frontend-web-ingress",
+            "coderushoj-backend-web-ingress",
+            "coderushoj-docs-web-ingress",
             "coderushoj-sandbox-ingress",
             "coderushoj-backend-internal-ingress",
             "coderushoj-dns-egress",
@@ -215,10 +217,36 @@ class ApplicationRenderTest(unittest.TestCase):
         self.assertIn("port: 50051", sandbox_ingress)
         self.assertNotIn("port: 1025", sandbox_ingress)
 
+        for component, port in (
+            ("frontend", 8080),
+            ("backend", 7999),
+            ("docs", 8080),
+        ):
+            policy = self.network_policy(
+                rendered,
+                f"coderushoj-{component}-web-ingress",
+            )
+            selected_pods = policy.split("policyTypes:", 1)[0]
+            self.assertIn(
+                f"app.kubernetes.io/component: {component}",
+                selected_pods,
+            )
+            self.assertNotIn("matchExpressions:", selected_pods)
+            self.assertIn(
+                f"- {{protocol: TCP, port: {port}}}",
+                policy,
+            )
+            self.assertEqual(1, policy.count("port:"))
+
     def test_judge_network_authorizations_follow_external_api_flags(self):
         internal_only = self.render()
-        shared_web = self.network_policy(internal_only, "coderushoj-web-ingress")
-        self.assertNotIn("judging-server", shared_web)
+        for component in ("frontend", "backend", "docs"):
+            web_policy = self.network_policy(
+                internal_only,
+                f"coderushoj-{component}-web-ingress",
+            )
+            self.assertNotIn("judging-server", web_policy)
+        self.assertNotIn("name: coderushoj-web-ingress", internal_only)
         self.assertNotIn("name: coderushoj-judge-web-ingress", internal_only)
         self.assertIn("name: coderushoj-judging-redis-egress", internal_only)
 

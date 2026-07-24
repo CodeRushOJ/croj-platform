@@ -1,0 +1,23 @@
+# Local workspace and generated credentials
+.workspace/
+.env.local
+*.secret.yaml
+
+# Generated deployment and test artifacts
+artifacts/*
+!artifacts/.gitkeep
+rendered/
+coverage/
+playwright-report/
+test-results/
+
+# Documentation build output and dependencies
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+docs/node_modules/
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*.swp

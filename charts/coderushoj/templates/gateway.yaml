@@ -1,0 +1,63 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  gatewayClassName: {{ .Values.gateway.className }}
+  {{- if .Values.gateway.envoyProxy.enabled }}
+  infrastructure:
+    parametersRef:
+      group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      name: {{ .Release.Name }}
+  {{- end }}
+  listeners:
+    - name: http
+      protocol: {{ ternary "HTTPS" "HTTP" .Values.gateway.tls.enabled }}
+      port: {{ ternary 443 80 .Values.gateway.tls.enabled }}
+      hostname: {{ .Values.gateway.host | quote }}
+      {{- if .Values.gateway.tls.enabled }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: {{ required "gateway.tls.secretName is required when TLS is enabled" .Values.gateway.tls.secretName }}
+      {{- end }}
+      allowedRoutes:
+        namespaces:
+          from: Same
+    {{- if .Values.applications.enabled }}
+    - name: docs-http
+      protocol: {{ ternary "HTTPS" "HTTP" .Values.gateway.tls.enabled }}
+      port: {{ ternary 443 80 .Values.gateway.tls.enabled }}
+      hostname: {{ .Values.gateway.docsHost | quote }}
+      {{- if .Values.gateway.tls.enabled }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: {{ required "gateway.tls.secretName is required when TLS is enabled" .Values.gateway.tls.secretName }}
+      {{- end }}
+      allowedRoutes:
+        namespaces:
+          from: Same
+    {{- end }}
+    {{- if and .Values.applications.enabled .Values.judgingServer.externalAPI.enabled .Values.judgingServer.externalAPI.expose }}
+    - name: judge-api
+      protocol: {{ ternary "HTTPS" "HTTP" .Values.judgingServer.externalAPI.tls.enabled }}
+      port: {{ ternary 443 80 .Values.judgingServer.externalAPI.tls.enabled }}
+      hostname: {{ .Values.gateway.judgeHost | quote }}
+      {{- if .Values.judgingServer.externalAPI.tls.enabled }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: {{ required "judgingServer.externalAPI.tls.secretName is required when TLS is enabled" .Values.judgingServer.externalAPI.tls.secretName }}
+      {{- end }}
+      allowedRoutes:
+        namespaces:
+          from: Same
+    {{- end }}

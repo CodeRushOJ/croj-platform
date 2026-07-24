@@ -1,0 +1,68 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: coderushoj-s3-smoke
+  namespace: coderushoj
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: coderushoj-infra
+        app.kubernetes.io/component: s3-smoke
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: aws-cli
+          image: public.ecr.aws/aws-cli/aws-cli:2.27.41
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              printf 'coderushoj-platform-smoke' >/tmp/payload
+              aws --endpoint-url http://coderushoj-infra-seaweedfs:8333 s3 cp /tmp/payload s3://coderushoj-testdata/smoke/platform.txt
+              result="$(aws --endpoint-url http://coderushoj-infra-seaweedfs:8333 s3 cp s3://coderushoj-testdata/smoke/platform.txt -)"
+              test "$result" = 'coderushoj-platform-smoke'
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: coderushoj-local-secrets
+                  key: s3-access-key
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: coderushoj-local-secrets
+                  key: s3-secret-key
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_EC2_METADATA_DISABLED
+              value: "true"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+      volumes:
+        - name: tmp
+          emptyDir: {}

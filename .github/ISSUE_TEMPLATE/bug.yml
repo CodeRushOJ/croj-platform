@@ -1,0 +1,40 @@
+name: Bug report
+description: 报告可复现的错误或回归
+title: "[Bug]: "
+labels: ["type/bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: 说明实际行为、预期行为和用户影响；安全漏洞请勿公开提交。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: 给出版本、环境、步骤和已脱敏的日志。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: 描述修复后必须成立的行为与不回归条件。
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Regression tests and evidence
+      description: 指定必须新增的失败复现测试和修复验证。
+    validations:
+      required: true
+  - type: dropdown
+    id: release
+    attributes:
+      label: Release note category
+      options: [Fixes, Security, Migrations, Operations, Documentation]
+    validations:
+      required: true

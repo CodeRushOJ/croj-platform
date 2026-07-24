@@ -1,0 +1,45 @@
+name: Security hardening
+description: 仅用于不包含未公开漏洞细节的一般安全加固
+title: "[Security hardening]: "
+labels: ["type/security"]
+body:
+  - type: markdown
+    attributes:
+      value: |-
+        ## Security Policy
+        可被利用的漏洞、密钥泄漏或绕过方式必须通过仓库的私密 Security Advisory 报告，禁止写入公开 Issue。
+  - type: checkboxes
+    id: disclosure
+    attributes:
+      label: Disclosure check
+      options:
+        - label: 本 Issue 不包含未修复漏洞的利用细节、密钥或个人数据。
+          required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: 描述一般加固目标、威胁模型和受影响边界。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: 列出安全属性、负向测试和审计证据。
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Security tests
+      description: 说明自动化扫描、滥用用例与回归测试。
+    validations:
+      required: true
+  - type: dropdown
+    id: release
+    attributes:
+      label: Release note category
+      options: [Security, Operations]
+    validations:
+      required: true

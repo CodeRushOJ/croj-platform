@@ -1,0 +1,23 @@
+applications:
+  enabled: true
+
+judgingServer:
+  externalAPI:
+    expose: true
+
+images:
+  frontend:
+    tag: dev
+    pullPolicy: Never
+  backend:
+    tag: dev
+    pullPolicy: Never
+  judgingServer:
+    tag: dev
+    pullPolicy: Never
+  sandbox:
+    tag: dev
+    pullPolicy: Never
+  docs:
+    tag: dev
+    pullPolicy: Never

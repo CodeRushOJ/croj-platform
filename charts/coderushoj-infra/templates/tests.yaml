@@ -1,0 +1,46 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "coderushoj-infra.fullname" . }}-rocketmq-topics
+  labels:
+    {{- include "coderushoj-infra.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: rocketmq-topic-bootstrap
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 3000
+        runAsGroup: 3000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: topics
+          image: {{ .Values.rocketmq.image }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            {{- include "coderushoj-infra.securityContext" . | nindent 12 }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              namesrv={{ include "coderushoj-infra.fullname" . }}-rocketmq-namesrv:9876
+              until sh mqadmin clusterList -n "$namesrv" >/dev/null 2>&1; do sleep 3; done
+              sh mqadmin updateTopic -n "$namesrv" -c CodeRushCluster -t submission-topic
+              sh mqadmin updateTopic -n "$namesrv" -c CodeRushCluster -t submission-dead-letter-topic
+          resources:
+            requests:
+              cpu: 50m
+              memory: 1Gi
+            limits:
+              cpu: 250m
+              memory: 1280Mi

@@ -1,0 +1,85 @@
+{{- if .Values.applications.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.services.frontend.name }}
+  labels:
+    {{- include "coderushoj.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  selector:
+    {{- include "coderushoj.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+  ports:
+    - name: http
+      port: {{ .Values.services.frontend.port }}
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.services.backend.name }}
+  labels:
+    {{- include "coderushoj.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  selector:
+    {{- include "coderushoj.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+  ports:
+    - name: http
+      port: {{ .Values.services.backend.port }}
+      targetPort: http
+---
+{{- if .Values.judgingServer.externalAPI.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.services.judge.name }}
+  labels:
+    {{- include "coderushoj.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: judging-server
+spec:
+  selector:
+    {{- include "coderushoj.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: judging-server
+  ports:
+    - name: external-http
+      port: {{ .Values.services.judge.port }}
+      targetPort: external-http
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.services.sandbox.name }}
+  labels:
+    {{- include "coderushoj.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: false
+  selector:
+    {{- include "coderushoj.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox
+  ports:
+    - name: grpc
+      port: {{ .Values.services.sandbox.port }}
+      targetPort: grpc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.services.docs.name }}
+  labels:
+    {{- include "coderushoj.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: docs
+spec:
+  selector:
+    {{- include "coderushoj.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: docs
+  ports:
+    - name: http
+      port: {{ .Values.services.docs.port }}
+      targetPort: http
+{{- end }}

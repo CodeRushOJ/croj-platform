@@ -1,0 +1,69 @@
+secrets:
+  name: coderushoj-local-secrets
+
+applications:
+  instanceLabel: coderushoj
+
+mailpit:
+  enabled: true
+  image: axllent/mailpit:v1.30.0
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+mysql:
+  image: mysql:8.4.10
+  database: code_rush_oj
+  storage: 5Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+redis:
+  image: redis:8.6.2-alpine
+  storage: 1Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+rocketmq:
+  image: apache/rocketmq:5.5.0
+  storage: 5Gi
+  nameserverResources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  brokerResources:
+    requests:
+      cpu: 250m
+      memory: 768Mi
+    limits:
+      cpu: "1"
+      memory: 1536Mi
+
+seaweedfs:
+  image: chrislusf/seaweedfs:4.39
+  bucket: coderushoj-testdata
+  storage: 10Gi
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi

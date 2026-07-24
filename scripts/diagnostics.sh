@@ -25,6 +25,9 @@ umask 077
 mkdir -p "$diagnostics_root"
 chmod 700 "$diagnostics_root"
 
+# Replacing this shell is intentional: Python owns the lock and reads the
+# remaining worker section as data before launching it under the invoking Bash.
+# shellcheck disable=SC2093
 exec python3 - "$SCRIPT_DIR/diagnostics.sh" "$BASH" "$namespace" \
   "$diagnostics_root" "$lock_file" "$legacy_lock_dir" \
   "$lock_timeout_seconds" "$retain_bundles" "$SCRIPT_DIR" <<'PY'

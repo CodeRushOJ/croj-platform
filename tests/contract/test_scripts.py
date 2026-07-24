@@ -362,93 +362,81 @@ printf 'mock diagnostic output\\n'
                 "a live owner was reclaimed after ps output changed with TZ",
             )
 
-    def test_diagnostics_two_reclaimers_cannot_replace_a_new_live_owner(self):
+    def test_diagnostics_legacy_migration_rechecks_the_renamed_inode(self):
         with tempfile.TemporaryDirectory() as directory:
             project, diagnostics_script, env = self.diagnostics_fixture(directory)
             diagnostics_root = project / ".workspace/diagnostics"
-            diagnostics_root.mkdir(parents=True)
-            (diagnostics_root / ".publish.lock").touch()
+            legacy_lock = diagnostics_root / ".publish.lock"
+            legacy_lock.mkdir(parents=True)
+            (legacy_lock / "pid").write_text("999999\n")
+            (legacy_lock / "token").write_text("stale-token\n")
 
-            coordination = pathlib.Path(directory) / "mv-coordination"
-            coordination.mkdir()
-            real_mv = shutil.which("mv")
-            self.assertIsNotNone(real_mv)
-            fake_mv = pathlib.Path(directory) / "bin/mv"
-            fake_mv.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -Eeuo pipefail\n"
-                f"real_mv={real_mv!r}\n"
-                'if [[ "${1:-}" == */.publish.lock '
-                '&& "${2:-}" == */.publish.lock.stale.* ]]; then\n'
-                '  if mkdir "$MOCK_DIAGNOSTICS_MV_COORDINATION/claim" '
-                "2>/dev/null; then\n"
-                '    "$real_mv" "$@"\n'
-                '    : >"$MOCK_DIAGNOSTICS_MV_COORDINATION/first-moved"\n'
-                "    exit 0\n"
-                "  fi\n"
-                '  while [[ ! -f "$MOCK_DIAGNOSTICS_MV_COORDINATION/first-moved" ]]; do\n'
-                "    sleep 0.01\n"
-                "  done\n"
-                '  while [[ ! -f "${1}/token" ]]; do\n'
-                "    sleep 0.01\n"
-                "  done\n"
-                '  exec "$real_mv" "$@"\n'
-                "fi\n"
-                'exec "$real_mv" "$@"\n'
+            hook_root = pathlib.Path(directory) / "python-hook"
+            hook_root.mkdir()
+            race_marker = pathlib.Path(directory) / "rename-race-injected"
+            parked_snapshot = diagnostics_root / ".publish.lock.stale-snapshot"
+            sitecustomize = f"""
+import os
+import pathlib
+
+_real_rename = os.rename
+_legacy = {str(legacy_lock)!r}
+_parked = {str(parked_snapshot)!r}
+_marker = pathlib.Path({str(race_marker)!r})
+
+def _controlled_rename(source, destination, *args, **kwargs):
+    source_text = os.fspath(source)
+    destination_text = os.fspath(destination)
+    if (
+        os.environ.get("MOCK_DIAGNOSTICS_RENAME_RACE") == "1"
+        and source_text == _legacy
+        and ".legacy-migration." in destination_text
+        and not _marker.exists()
+    ):
+        _real_rename(source_text, _parked)
+        os.mkdir(source_text, 0o700)
+        pathlib.Path(source_text, "pid").write_text(f"{{os.getpid()}}\\n")
+        pathlib.Path(source_text, "token").write_text("replacement-live-token\\n")
+        _marker.touch()
+        return _real_rename(source_text, destination_text)
+    return _real_rename(source, destination, *args, **kwargs)
+
+os.rename = _controlled_rename
+"""
+            (hook_root / "sitecustomize.py").write_text(sitecustomize)
+
+            capture_marker = pathlib.Path(directory) / "capture-started"
+            env["PYTHONPATH"] = os.pathsep.join(
+                filter(None, (str(hook_root), env.get("PYTHONPATH", "")))
             )
-            fake_mv.chmod(0o755)
+            env["MOCK_DIAGNOSTICS_RENAME_RACE"] = "1"
+            env["MOCK_DIAGNOSTICS_CAPTURE_MARKER"] = str(capture_marker)
 
-            hold = pathlib.Path(directory) / "hold-captures"
-            hold.touch()
-            markers = [
-                pathlib.Path(directory) / "capture-one",
-                pathlib.Path(directory) / "capture-two",
-            ]
-            processes = []
-            for marker in markers:
-                process_env = env.copy()
-                process_env["MOCK_DIAGNOSTICS_MV_COORDINATION"] = str(coordination)
-                process_env["MOCK_DIAGNOSTICS_CAPTURE_MARKER"] = str(marker)
-                process_env["MOCK_DIAGNOSTICS_HOLD_FILE"] = str(hold)
-                processes.append(
-                    subprocess.Popen(
-                        ["bash", str(diagnostics_script)],
-                        cwd=project,
-                        env=process_env,
-                        text=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                    )
-                )
-
-            deadline = time.monotonic() + 5
-            while time.monotonic() < deadline and not any(
-                marker.exists() for marker in markers
-            ):
-                time.sleep(0.01)
-            self.assertTrue(any(marker.exists() for marker in markers))
-            time.sleep(0.5)
-            concurrent_captures = sum(marker.exists() for marker in markers)
-            hold.unlink()
-
-            results = []
-            for process in processes:
-                stdout, stderr = process.communicate(timeout=20)
-                results.append((process.returncode, stdout, stderr))
-            for returncode, stdout, stderr in results:
-                self.assertEqual(0, returncode, stdout + stderr)
+            result = subprocess.run(
+                ["bash", str(diagnostics_script)],
+                cwd=project,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("changed during migration", result.stderr)
+            self.assertTrue(race_marker.exists())
+            self.assertFalse(capture_marker.exists())
+            self.assertTrue(legacy_lock.is_dir())
             self.assertEqual(
-                1,
-                concurrent_captures,
-                "a delayed stale observer replaced a newly acquired live lock",
+                "replacement-live-token",
+                (legacy_lock / "token").read_text().strip(),
             )
+            self.assertTrue(parked_snapshot.is_dir())
 
     def test_diagnostics_shared_inherited_ofd_cannot_authorize_two_publishers(self):
         with tempfile.TemporaryDirectory() as directory:
             project, diagnostics_script, env = self.diagnostics_fixture(directory)
             diagnostics_root = project / ".workspace/diagnostics"
             diagnostics_root.mkdir(parents=True)
-            shared_lock = diagnostics_root / ".publish.lock"
+            shared_lock = diagnostics_root / ".publish.flock"
             hold = pathlib.Path(directory) / "hold-captures"
             hold.touch()
             markers = [
@@ -491,14 +479,11 @@ for marker in (marker_one, marker_two):
             pass_fds=(9,),
         )
     )
-os.close(9)
-
-deadline = time.monotonic() + 5
 marker_paths = [pathlib.Path(marker_one), pathlib.Path(marker_two)]
-while time.monotonic() < deadline and not any(path.exists() for path in marker_paths):
-    time.sleep(0.01)
 time.sleep(0.5)
-concurrent = sum(path.exists() for path in marker_paths)
+entered_before_unlock = sum(path.exists() for path in marker_paths)
+fcntl.flock(9, fcntl.LOCK_UN)
+os.close(9)
 pathlib.Path(hold_path).unlink()
 
 results = []
@@ -507,7 +492,11 @@ for process in processes:
     results.append(
         {"returncode": process.returncode, "stdout": stdout, "stderr": stderr}
     )
-print(json.dumps({"concurrent": concurrent, "results": results}))
+print(
+    json.dumps(
+        {"entered_before_unlock": entered_before_unlock, "results": results}
+    )
+)
 """
             result = subprocess.run(
                 [
@@ -537,9 +526,9 @@ print(json.dumps({"concurrent": concurrent, "results": results}))
                     process_result["stdout"] + process_result["stderr"],
                 )
             self.assertEqual(
-                1,
-                payload["concurrent"],
-                "two children sharing one locked OFD both entered capture",
+                0,
+                payload["entered_before_unlock"],
+                "a child treated a shared locked OFD as authorization to capture",
             )
 
     def test_diagnostics_reuses_the_invoking_bash_without_hardcoded_path(self):

@@ -156,6 +156,7 @@ class ApplicationRenderTest(unittest.TestCase):
             "coderushoj-dns-egress",
             "coderushoj-backend-dependencies-egress",
             "coderushoj-judging-dependencies-egress",
+            "coderushoj-judging-redis-egress",
             "coderushoj-judging-internal-egress",
             "coderushoj-backend-smtp-egress",
             "coderushoj-judging-webhook-egress",
@@ -182,13 +183,27 @@ class ApplicationRenderTest(unittest.TestCase):
             self.assertIn("app.kubernetes.io/instance: coderushoj-infra", policy)
             for component, port in (
                 ("mysql", 3306),
-                ("redis", 6379),
                 ("rocketmq-namesrv", 9876),
                 ("rocketmq-broker", 10911),
                 ("seaweedfs", 8333),
             ):
                 self.assertIn(f"app.kubernetes.io/component: {component}", policy)
                 self.assertIn(f"port: {port}", policy)
+
+        backend_dependencies = self.network_policy(
+            rendered,
+            "coderushoj-backend-dependencies-egress",
+        )
+        self.assertIn("app.kubernetes.io/component: redis", backend_dependencies)
+        self.assertIn("port: 6379", backend_dependencies)
+
+        judging_redis = self.network_policy(
+            rendered,
+            "coderushoj-judging-redis-egress",
+        )
+        self.assertIn("app.kubernetes.io/instance: coderushoj-infra", judging_redis)
+        self.assertIn("app.kubernetes.io/component: redis", judging_redis)
+        self.assertIn("port: 6379", judging_redis)
 
         internal = self.network_policy(rendered, "coderushoj-judging-internal-egress")
         for component, port in (("backend", 7999), ("sandbox", 50051)):
@@ -199,6 +214,34 @@ class ApplicationRenderTest(unittest.TestCase):
         sandbox_ingress = self.network_policy(rendered, "coderushoj-sandbox-ingress")
         self.assertIn("port: 50051", sandbox_ingress)
         self.assertNotIn("port: 1025", sandbox_ingress)
+
+    def test_judge_network_authorizations_follow_external_api_flags(self):
+        internal_only = self.render()
+        shared_web = self.network_policy(internal_only, "coderushoj-web-ingress")
+        self.assertNotIn("judging-server", shared_web)
+        self.assertNotIn("name: coderushoj-judge-web-ingress", internal_only)
+        self.assertIn("name: coderushoj-judging-redis-egress", internal_only)
+
+        exposed = self.render("--values", str(CHART / "values-kind.yaml"))
+        judge_web = self.network_policy(exposed, "coderushoj-judge-web-ingress")
+        self.assertIn("app.kubernetes.io/instance: coderushoj", judge_web)
+        self.assertIn("app.kubernetes.io/component: judging-server", judge_web)
+        self.assertIn("kubernetes.io/metadata.name: envoy-gateway-system", judge_web)
+        self.assertIn("port: 8081", judge_web)
+
+        disabled = self.render(
+            "--set",
+            "judgingServer.externalAPI.enabled=false",
+            "--set",
+            "judgingServer.externalAPI.expose=false",
+        )
+        self.assertNotIn("name: coderushoj-judge-web-ingress", disabled)
+        self.assertNotIn("name: coderushoj-judging-redis-egress", disabled)
+        judging_dependencies = self.network_policy(
+            disabled,
+            "coderushoj-judging-dependencies-egress",
+        )
+        self.assertNotIn("app.kubernetes.io/component: redis", judging_dependencies)
 
     def test_smtp_egress_uses_profile_port_and_external_scope(self):
         development = self.render()

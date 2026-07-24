@@ -173,6 +173,8 @@ unset CROJ_EXTERNAL_API_KEY
 
 外部判题 REST 在默认 values 中只创建 ClusterIP，不对集群外公开；`values-kind.yaml` 仅为本地联调显式开放 HTTP。capabilities 也要求具有 `capabilities:read` scope 的 Bearer API key，不能匿名调用。租户和 API key 由 `croj-judging-server` 的 `judge-admin` 创建，secret 只显示一次。生产环境必须预先创建覆盖主站/文档域名的 `coderushoj-web-tls` Secret，并为 Judge 配置独立 TLS Secret、网络出口策略和 CI 发布的镜像 digest，不能照搬本地 HTTP 配置。
 
+应用与基础设施是两个独立 Helm release。修改 `judgingServer.externalAPI.enabled` 时，必须在同一次部署变更中把 infra Chart 的 `applications.judgingExternalAPIEnabled` 设为相同布尔值：关闭后不再渲染 Judge→Redis egress 或 Redis→Judge ingress；只有同时启用并设置 `judgingServer.externalAPI.expose=true` 时才开放 Envoy Gateway 到 Judge `8081/TCP`。先升级 infra release，再升级应用 release，避免新增 Judge Pod 在入口策略生效前启动。
+
 本地注册和邮箱验证码会进入 Mailpit，不会发到公网。需要人工查看时临时转发 UI；结束 `kubectl port-forward` 即可，不需要暴露 Ingress：
 
 ```bash

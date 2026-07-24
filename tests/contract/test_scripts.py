@@ -1,6 +1,9 @@
+import os
 import pathlib
 import shutil
+import stat
 import subprocess
+import tempfile
 import unittest
 
 
@@ -84,6 +87,107 @@ class ScriptContractTest(unittest.TestCase):
         self.assertNotIn("pods-logs.txt", contents)
         self.assertNotIn("redacted diagnostics", contents)
         self.assertIn("sensitive diagnostics", contents)
+
+    def test_diagnostics_atomically_replace_unsafe_latest_bundle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = pathlib.Path(directory) / "project"
+            scripts = project / "scripts"
+            scripts.mkdir(parents=True)
+            shutil.copy2(ROOT / "scripts/diagnostics.sh", scripts / "diagnostics.sh")
+            shutil.copy2(ROOT / "scripts/lib.sh", scripts / "lib.sh")
+
+            mock_bin = pathlib.Path(directory) / "bin"
+            mock_bin.mkdir()
+            mock = "#!/usr/bin/env bash\nprintf 'mock diagnostic output\\n'\n"
+            for command in ("kubectl", "helm"):
+                executable = mock_bin / command
+                executable.write_text(mock)
+                executable.chmod(0o755)
+
+            diagnostics_root = project / ".workspace/diagnostics"
+            latest = diagnostics_root / "latest"
+            latest.mkdir(parents=True)
+            latest.chmod(0o755)
+            stale_log = latest / "pods-logs.txt"
+            stale_log.write_text("historical application secret\n")
+            stale_log.chmod(0o644)
+
+            env = os.environ.copy()
+            env["PATH"] = f"{mock_bin}{os.pathsep}{env['PATH']}"
+            result = subprocess.run(
+                ["bash", str(scripts / "diagnostics.sh")],
+                cwd=project,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertFalse(stale_log.exists())
+            self.assertEqual(
+                0o700,
+                stat.S_IMODE(latest.stat().st_mode),
+            )
+            files = [path for path in latest.iterdir() if path.is_file()]
+            self.assertTrue(files, "diagnostics bundle has no files")
+            for path in files:
+                with self.subTest(path=path.name):
+                    self.assertEqual(0o600, stat.S_IMODE(path.stat().st_mode))
+            self.assertEqual([], list(diagnostics_root.glob(".latest.*")))
+
+    def test_diagnostics_cleanup_retries_failed_bundle_restore(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = pathlib.Path(directory) / "project"
+            scripts = project / "scripts"
+            scripts.mkdir(parents=True)
+            shutil.copy2(ROOT / "scripts/diagnostics.sh", scripts / "diagnostics.sh")
+            shutil.copy2(ROOT / "scripts/lib.sh", scripts / "lib.sh")
+
+            mock_bin = pathlib.Path(directory) / "bin"
+            mock_bin.mkdir()
+            mock = "#!/usr/bin/env bash\nprintf 'mock diagnostic output\\n'\n"
+            for command in ("kubectl", "helm"):
+                executable = mock_bin / command
+                executable.write_text(mock)
+                executable.chmod(0o755)
+
+            real_mv = shutil.which("mv")
+            self.assertIsNotNone(real_mv)
+            mv_attempts = pathlib.Path(directory) / "mv-attempts"
+            fake_mv = mock_bin / "mv"
+            fake_mv.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -Eeuo pipefail\n"
+                f"attempts_file={str(mv_attempts)!r}\n"
+                'if [[ "${2:-}" == */latest ]]; then\n'
+                '  attempts="$(cat "$attempts_file" 2>/dev/null || printf 0)"\n'
+                '  attempts="$((attempts + 1))"\n'
+                '  printf "%s\\n" "$attempts" >"$attempts_file"\n'
+                '  if (( attempts <= 2 )); then exit 1; fi\n'
+                "fi\n"
+                f'exec {real_mv!r} "$@"\n'
+            )
+            fake_mv.chmod(0o755)
+
+            diagnostics_root = project / ".workspace/diagnostics"
+            latest = diagnostics_root / "latest"
+            latest.mkdir(parents=True)
+            sentinel = latest / "sentinel.txt"
+            sentinel.write_text("previous diagnostics\n")
+
+            env = os.environ.copy()
+            env["PATH"] = f"{mock_bin}{os.pathsep}{env['PATH']}"
+            result = subprocess.run(
+                ["bash", str(scripts / "diagnostics.sh")],
+                cwd=project,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(0, result.returncode)
+            self.assertTrue(sentinel.exists(), "old diagnostics bundle was not restored")
+            self.assertEqual([], list(diagnostics_root.glob(".latest.*")))
 
     @unittest.skipUnless(shutil.which("shellcheck"), "ShellCheck is not installed")
     def test_shellcheck_has_no_findings(self):

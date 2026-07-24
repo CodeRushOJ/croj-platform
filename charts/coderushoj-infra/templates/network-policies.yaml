@@ -221,7 +221,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "coderushoj-infra.fullname" . }}-allow-applications-redis
+  name: {{ include "coderushoj-infra.fullname" . }}-allow-applications-redis-backend
   labels:
     {{- include "coderushoj-infra.labels" . | nindent 4 }}
 spec:
@@ -237,12 +237,34 @@ spec:
             matchLabels:
               app.kubernetes.io/name: coderushoj
               app.kubernetes.io/instance: {{ .Values.applications.instanceLabel }}
-            matchExpressions:
-              - key: app.kubernetes.io/component
-                operator: In
-                values: [backend, judging-server]
+              app.kubernetes.io/component: backend
       ports:
         - {protocol: TCP, port: 6379}
+{{- if .Values.applications.judgingExternalAPIEnabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "coderushoj-infra.fullname" . }}-allow-applications-redis-judging
+  labels:
+    {{- include "coderushoj-infra.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: coderushoj
+              app.kubernetes.io/instance: {{ .Values.applications.instanceLabel }}
+              app.kubernetes.io/component: judging-server
+      ports:
+        - {protocol: TCP, port: 6379}
+{{- end }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

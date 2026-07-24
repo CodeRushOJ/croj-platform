@@ -7,7 +7,7 @@ make diagnostics
 kubectl get events -n coderushoj --sort-by=.metadata.creationTimestamp
 ```
 
-诊断输出位于 `.workspace/diagnostics/latest/`，由 `umask 077` 限制为当前用户访问。它包含节点、工作负载元数据、事件、Pod describe 和 Helm release 列表，属于敏感运维数据，并非自动脱敏 payload；默认不抓取应用日志，也不请求 Secret 内容。上传或转发前仍要人工检查主机名、地址、事件消息和注解。
+诊断先写入权限 `0700` 的临时目录，文件固定为 `0600`，全部采集完成后再原子替换 `.workspace/diagnostics/latest/`；即使旧目录为宽权限，发布后也会收敛权限并删除历史 `pods-logs.txt`。异常或信号退出会清理临时目录，并在发布切换失败时恢复旧 bundle。诊断包含节点、工作负载元数据、事件、Pod describe 和 Helm release 列表，属于敏感运维数据，并非自动脱敏 payload；默认不抓取应用日志，也不请求 Secret 内容。上传或转发前仍要人工检查主机名、地址、事件消息和注解。
 
 ## Colima 与镜像拉取
 

@@ -61,6 +61,14 @@ class DocumentationContractTest(unittest.TestCase):
         ):
             self.assertIn(statement, combined)
 
+    def test_external_api_network_flag_and_atomic_diagnostics_are_documented(self):
+        quickstart = (DOCS / "guide/quickstart.md").read_text()
+        troubleshooting = (DOCS / "operations/troubleshooting.md").read_text()
+        self.assertIn("applications.judgingExternalAPIEnabled", quickstart)
+        self.assertIn("judgingServer.externalAPI.enabled", quickstart)
+        self.assertIn("原子替换", troubleshooting)
+        self.assertIn("pods-logs.txt", troubleshooting)
+
     def test_architecture_and_release_history_are_explicit(self):
         architecture = (DOCS / "architecture/platform.md").read_text()
         self.assertIn("```mermaid", architecture)

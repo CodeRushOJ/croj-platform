@@ -3,6 +3,7 @@ secrets:
 
 applications:
   instanceLabel: coderushoj
+  judgingExternalAPIEnabled: true
 
 mailpit:
   enabled: true

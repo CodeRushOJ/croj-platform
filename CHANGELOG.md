@@ -32,6 +32,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - 修复三节点 Kind 验收中的 S3 probe 被默认拒绝策略阻断：新增只允许 probe 访问集群 DNS 与 SeaweedFS `8333/TCP` 的最小权限双向 NetworkPolicy。
 - 修复应用与基础设施 NetworkPolicy 的 release selector 和真实数据流：分别限定 MySQL、Redis、S3、RocketMQ NameServer/Broker、Mailpit、生产 SMTP、内部 HTTP 与 gRPC 端口。
+- 外部判题入口只在 listener 启用且显式暴露时开放 `8081/TCP`，Judge 的 Redis 双向授权随 external API 开关同步渲染。
 - 修复 Colima 虚拟机中 `/etc/resolv.conf` 为空导致 Kind 节点无法拉取镜像的问题，集群脚本会安全地自愈 DNS。
 - 修复本地 Secret 文件尾部换行导致 MySQL 初始化客户端配置无效的问题，并规范化已生成的密钥文件。
 - 修复 RocketMQ 默认 2 GiB 堆与 `AlwaysPreTouch` 在本地资源限制下触发 OOM 的问题，分别约束 NameServer、Broker 和管理任务内存。
@@ -59,6 +60,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Kind 的两个工作节点新增 `coderushoj.io/sandbox=true` 专用调度标签。
 - 文档更新为长期运行沙箱、异步 REST、稳定 Webhook outbox 和 headless Service 架构，并记录本地/生产暴露差异。
 - 失败诊断按敏感运维数据以受限权限保存，默认不抓取应用日志；文档明确 Envoy Gateway controller/CRD 与应用 Helm release 的独立生命周期和回滚边界。
+- 失败诊断在权限收敛的临时目录完成采集后原子发布，替换旧 `latest` 时清除历史应用日志并保留异常恢复路径。
 - 服务发现方向由历史原型中的 ZooKeeper 调整为 Kubernetes 原生 Service、EndpointSlice 与 Job 调度。
 - MySQL 被确认为权威数据源，Redis 仅作可重建加速层；隐藏测试数据和附件使用 S3 兼容的 SeaweedFS。
 - `make deploy && make smoke` 已在本机三节点 Kind 集群真实验证 MySQL `SELECT 1`、Redis `PONG`、RocketMQ topic、SeaweedFS S3 读写和 Gateway Programmed 状态。

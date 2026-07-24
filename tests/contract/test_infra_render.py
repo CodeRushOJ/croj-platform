@@ -100,7 +100,6 @@ class InfrastructureRenderTest(unittest.TestCase):
         rendered = self.render()
         policies = {
             "mysql": (3306, ("backend", "judging-server")),
-            "redis": (6379, ("backend", "judging-server")),
             "seaweedfs": (8333, ("backend", "judging-server")),
             "rocketmq-namesrv": (9876, ("backend", "judging-server")),
             "rocketmq-broker": (10911, ("backend", "judging-server")),
@@ -125,6 +124,36 @@ class InfrastructureRenderTest(unittest.TestCase):
                 for source in sources:
                     self.assertIn(source, policy)
                 self.assertIn(f"port: {port}", policy)
+
+        redis_backend = self.network_policy(
+            rendered,
+            "coderushoj-infra-allow-applications-redis-backend",
+        )
+        self.assertIn("app.kubernetes.io/component: redis", redis_backend)
+        self.assertIn("app.kubernetes.io/component: backend", redis_backend)
+        self.assertNotIn("judging-server", redis_backend)
+        self.assertIn("port: 6379", redis_backend)
+
+        redis_judging = self.network_policy(
+            rendered,
+            "coderushoj-infra-allow-applications-redis-judging",
+        )
+        self.assertIn("app.kubernetes.io/component: redis", redis_judging)
+        self.assertIn("app.kubernetes.io/component: judging-server", redis_judging)
+        self.assertIn("port: 6379", redis_judging)
+
+        external_api_disabled = self.render(
+            "--set",
+            "applications.judgingExternalAPIEnabled=false",
+        )
+        self.assertNotIn(
+            "name: coderushoj-infra-allow-applications-redis-judging",
+            external_api_disabled,
+        )
+        self.assertIn(
+            "name: coderushoj-infra-allow-applications-redis-backend",
+            external_api_disabled,
+        )
 
         self.assertNotIn("name: coderushoj-infra-allow-applications\n", rendered)
 

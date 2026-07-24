@@ -28,12 +28,13 @@ make smoke
 ```bash
 make source-verify
 make source-checkout
+make test-bundle-contract
 make images-build
 # 仅在目标 Kind 集群已经存在时执行
 make images-load
 ```
 
-源码按 `<组件>/<commit>` 放在 `.workspace/sources/`，不会覆盖开发者已有仓库。`images-build` 会先做幂等 checkout，再用 Buildx 构建五个镜像并写入 OCI source/revision 标签；`images-load` 仅在这两项标签与源码锁完全一致时才载入已有集群，不会创建或启动 Kind 集群。完整更新与故障处理见[快速开始](docs/guide/quickstart.md#不可变源码与开发镜像)。
+源码按 `<组件>/<commit>` 放在 `.workspace/sources/`，不会覆盖开发者已有仓库。`test-bundle-contract` 会让锁定版本的 Backend 真实生成 TestBundle v1 ZIP，再把同一个文件交给锁定版本的 Judging 解析，避免两份手写 fixture 假装联调。`images-build` 会先做幂等 checkout，再用 Buildx 构建五个镜像并写入 OCI source/revision 标签；`images-load` 仅在这两项标签与源码锁完全一致时才载入已有集群，不会创建或启动 Kind 集群。完整更新与故障处理见[快速开始](docs/guide/quickstart.md#不可变源码与开发镜像)。
 
 ## 项目状态
 
@@ -47,6 +48,7 @@ make images-load
 ```bash
 make validate
 make source-verify
+make test-bundle-contract
 make smoke
 ```
 

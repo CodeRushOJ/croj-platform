@@ -105,6 +105,12 @@ CODERUSHOJ_SOURCES_DIR=/absolute/cache/path make source-checkout
 
 并发 checkout 使用由独立 helper 持有的内核文件锁；shell 被终止或崩溃后锁会由内核自动释放。升级自旧版本时，遗留的 owner 目录会经过宽限期、双重快照和原子 quarantine 后再清理。默认等待 300 秒、轮询 50 毫秒、遗留目录宽限 1000 毫秒；CI 如需更短的失败反馈，可分别设置 `CODERUSHOJ_CHECKOUT_LOCK_TIMEOUT_MS`、`CODERUSHOJ_CHECKOUT_LOCK_POLL_MS`、`CODERUSHOJ_CHECKOUT_LOCK_LEGACY_GRACE_MS`，三者必须为正整数且宽限期不能短于轮询间隔。
 
+隐藏测试数据协议必须通过真实 producer-to-consumer 门禁。下面的命令让锁定 Backend 运行正式导入代码并导出 TestBundle v1 ZIP，再把该文件的绝对路径交给锁定 Judging 测试；任何一端缺少契约入口、产物为空或判题侧拒绝都会失败：
+
+```bash
+make test-bundle-contract
+```
+
 构建会自动执行上述校验和 checkout，随后逐个调用 `docker buildx build --load`，并把锁定仓库与 commit 写入 OCI `source`/`revision` 标签：
 
 ```bash
@@ -120,7 +126,7 @@ make images-load
 CODERUSHOJ_CLUSTER_NAME=my-cluster make images-load
 ```
 
-任一组件（包括后端和判题服务）的最终集成提交准备好后，只把对应 `commit` 更新为经评审且可从官方仓库 fetch 的 40 位对象 ID，然后依次运行 `make source-verify`、`make source-checkout`、`make images-build`。锁文件的 PR diff 是版本变更的审计记录；不要增加 branch 字段，也不要用可变 tag 替代 commit。当前第一阶段只建立可复现输入、构建与载入链路，不宣称完整业务 E2E 已通过。
+任一组件（包括后端和判题服务）的最终集成提交准备好后，只把对应 `commit` 更新为经评审且可从官方仓库 fetch 的 40 位对象 ID，然后依次运行 `make source-verify`、`make source-checkout`、`make test-bundle-contract`、`make images-build`。锁文件的 PR diff 是版本变更的审计记录；不要增加 branch 字段，也不要用可变 tag 替代 commit。该契约门禁只证明隐藏测试包兼容，完整业务闭环仍必须通过 Kind 端到端验收。
 
 部署会完成：
 

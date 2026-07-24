@@ -65,6 +65,32 @@ jobs:
             --scanners vuln,misconfig --severity HIGH,CRITICAL --ignore-unfixed \
             --exit-code 1 --skip-dirs docs/node_modules .
 
+  test-bundle-contract:
+    name: Backend to judging TestBundle v1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out platform repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Java
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.3'
+          cache: false
+
+      - name: Check out immutable component sources
+        run: scripts/checkout-sources.sh
+
+      - name: Verify the real producer-to-consumer contract
+        run: scripts/verify-test-bundle-contract.sh
+
   platform-smoke:
     name: Three-node Kind platform smoke
     runs-on: ubuntu-24.04

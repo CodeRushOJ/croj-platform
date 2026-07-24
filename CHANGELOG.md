@@ -16,6 +16,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - 本地基础设施 profile 增加固定版本 Mailpit，捕获注册/验证码邮件而不向公网发送；生产 profile 强制由运维提供真实 SMTP 地址、账号和 Secret。
 - 增加 `sandbox-workers` headless Service；判题服务通过 Kubernetes Service DNS 和 gRPC `round_robin` 使用 Ready EndpointSlice，不再需要默认 Kubernetes API 权限。
 - 为第三方 OJ 增加独立 Judge hostname 与 `/api/v1` 路由；默认只提供集群内 Service，Kind profile 才显式开放本地 HTTP。
+- 增加 TestBundle v1 真实跨仓门禁：Backend 从锁定源码生成 ZIP，Judging 原样消费同一个产物；CI 不再依赖两仓各自维护的同名 fixture 推断兼容性。
 
 ### Security
 

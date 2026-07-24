@@ -17,6 +17,11 @@ kubectl get pods,svc,pvc,job -n "$namespace" -o wide >"$diagnostics_dir/workload
 kubectl get gateway,httproute -n "$namespace" -o yaml >"$diagnostics_dir/gateway.yaml" 2>&1 || true
 kubectl get events -n "$namespace" --sort-by=.metadata.creationTimestamp >"$diagnostics_dir/events.txt" 2>&1 || true
 kubectl describe pods -n "$namespace" >"$diagnostics_dir/pods-describe.txt" 2>&1 || true
+kubectl logs -n "$namespace" \
+  --selector='app.kubernetes.io/instance' \
+  --all-containers=true \
+  --prefix=true \
+  --tail=-1 >"$diagnostics_dir/pods-logs.txt" 2>&1 || true
 helm list -A >"$diagnostics_dir/helm.txt" 2>&1 || true
 
 log "redacted diagnostics written to $diagnostics_dir"

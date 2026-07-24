@@ -77,6 +77,13 @@ class ScriptContractTest(unittest.TestCase):
         self.assertIn("rocketmq_topics=", contents)
         self.assertIn("running_images=", contents)
 
+    def test_diagnostics_capture_container_logs(self):
+        contents = (ROOT / "scripts/diagnostics.sh").read_text()
+        self.assertIn('>"$diagnostics_dir/pods-logs.txt"', contents)
+        self.assertIn("kubectl logs", contents)
+        self.assertIn("--all-containers=true", contents)
+        self.assertIn("--prefix=true", contents)
+
     @unittest.skipUnless(shutil.which("shellcheck"), "ShellCheck is not installed")
     def test_shellcheck_has_no_findings(self):
         result = subprocess.run(

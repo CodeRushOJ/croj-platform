@@ -27,6 +27,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - 本地 Secret 生成器新增 JWT、内部结果 token 和四项 32-byte Base64 外部 API 密钥材料，保持幂等、静默和 `0600` 权限。
 - 应用工作负载默认关闭 ServiceAccount token 与 service links；NetworkPolicy 限制沙箱入口、依赖访问和公开 Webhook 出口。
 
+### Fixes
+
+- 修复三节点 Kind 验收中的 S3 probe 被默认拒绝策略阻断：新增只允许 probe 访问集群 DNS 与 SeaweedFS `8333/TCP` 的最小权限双向 NetworkPolicy，并在失败诊断中保留所有容器日志。
+
 ### Operations
 
 - Kind 的两个工作节点新增 `coderushoj.io/sandbox=true` 专用调度标签。

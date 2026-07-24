@@ -65,6 +65,26 @@ class InfrastructureRenderTest(unittest.TestCase):
         for key in ("mysql-root-password", "redis-password", "s3-access-key", "s3-secret-key"):
             self.assertIn(f"key: {key}", rendered)
 
+    def test_s3_smoke_probe_has_least_privilege_network_access(self):
+        rendered = self.render()
+        self.assertIn("name: coderushoj-infra-allow-s3-smoke-egress", rendered)
+        self.assertIn("name: coderushoj-infra-allow-s3-smoke-ingress", rendered)
+
+        egress_policy = rendered.split(
+            "name: coderushoj-infra-allow-s3-smoke-egress", 1
+        )[1].split("---", 1)[0]
+        self.assertIn("app.kubernetes.io/component: s3-smoke", egress_policy)
+        self.assertIn("app.kubernetes.io/component: seaweedfs", egress_policy)
+        self.assertIn("port: 8333", egress_policy)
+        self.assertIn("kubernetes.io/metadata.name: kube-system", egress_policy)
+
+        ingress_policy = rendered.split(
+            "name: coderushoj-infra-allow-s3-smoke-ingress", 1
+        )[1].split("---", 1)[0]
+        self.assertIn("app.kubernetes.io/component: seaweedfs", ingress_policy)
+        self.assertIn("app.kubernetes.io/component: s3-smoke", ingress_policy)
+        self.assertIn("port: 8333", ingress_policy)
+
     def test_local_memory_requests_fit_workstation_budget(self):
         rendered = self.render()
         requests = re.findall(r"requests:\n\s+cpu: [^\n]+\n\s+memory: (\d+)(Mi|Gi)", rendered)

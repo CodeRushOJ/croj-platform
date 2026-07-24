@@ -52,10 +52,25 @@ jobs:
       - name: Validate rendered Kubernetes resources
         run: |
           go install github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0
+          kubeconform="$(go env GOPATH)/bin/kubeconform"
           helm template coderushoj-infra charts/coderushoj-infra --namespace coderushoj \
-            | "$(go env GOPATH)/bin/kubeconform" -strict -summary -ignore-missing-schemas
+            | "$kubeconform" -strict -summary -ignore-missing-schemas
           helm template coderushoj charts/coderushoj --namespace coderushoj \
-            | "$(go env GOPATH)/bin/kubeconform" -strict -summary -ignore-missing-schemas
+            | "$kubeconform" -strict -summary -ignore-missing-schemas
+          helm template coderushoj charts/coderushoj --namespace coderushoj \
+            --set applications.enabled=true \
+            | "$kubeconform" -strict -summary -ignore-missing-schemas
+          digest="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          helm template coderushoj charts/coderushoj --namespace coderushoj \
+            --values charts/coderushoj/values-production.yaml \
+            --set-string "images.frontend.digest=$digest" \
+            --set-string "images.backend.digest=$digest" \
+            --set-string "images.judgingServer.digest=$digest" \
+            --set-string "images.sandbox.digest=$digest" \
+            --set-string "images.docs.digest=$digest" \
+            --set backend.smtp.host=smtp.operator.example \
+            --set backend.smtp.username=coderushoj@operator.example \
+            | "$kubeconform" -strict -summary -ignore-missing-schemas
 
       - name: Install Trivy
         uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1

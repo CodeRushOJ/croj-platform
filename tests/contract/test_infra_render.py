@@ -28,6 +28,11 @@ class InfrastructureRenderTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         return result.stdout
 
+    def network_policy(self, rendered, name):
+        marker = f"kind: NetworkPolicy\nmetadata:\n  name: {name}\n"
+        self.assertIn(marker, rendered, f"missing NetworkPolicy {name}")
+        return marker + rendered.split(marker, 1)[1].split("\n---", 1)[0]
+
     def test_renders_pinned_stateful_dependencies(self):
         rendered = self.render()
         for image in (
@@ -59,7 +64,7 @@ class InfrastructureRenderTest(unittest.TestCase):
         self.assertIn("kind: NetworkPolicy", rendered)
         self.assertIn("policyTypes:\n    - Ingress\n    - Egress", rendered)
         self.assertNotIn("podSelector: {}", rendered)
-        self.assertIn("values: [backend, judging-server]", rendered)
+        self.assertGreaterEqual(rendered.count("automountServiceAccountToken: false"), 7)
 
         # Keep the known historical default out of both rendered manifests and
         # source-level secret detectors by assembling the sentinel at runtime.
@@ -88,6 +93,87 @@ class InfrastructureRenderTest(unittest.TestCase):
         self.assertIn("app.kubernetes.io/component: s3-smoke", ingress_policy)
         self.assertIn("port: 8333", ingress_policy)
 
+        smoke_job = (ROOT / "tests/smoke/s3-job.yaml").read_text()
+        self.assertIn("automountServiceAccountToken: false", smoke_job)
+
+    def test_application_ingress_is_split_by_dependency_and_release(self):
+        rendered = self.render()
+        policies = {
+            "mysql": (3306, ("backend", "judging-server")),
+            "redis": (6379, ("backend", "judging-server")),
+            "seaweedfs": (8333, ("backend", "judging-server")),
+            "rocketmq-namesrv": (9876, ("backend", "judging-server")),
+            "rocketmq-broker": (10911, ("backend", "judging-server")),
+            "mailpit": (1025, ("backend",)),
+        }
+        for component, (port, sources) in policies.items():
+            with self.subTest(component=component):
+                policy = self.network_policy(
+                    rendered,
+                    f"coderushoj-infra-allow-applications-{component}",
+                )
+                selected_pods = policy.split("policyTypes:", 1)[0]
+                self.assertIn(
+                    "app.kubernetes.io/instance: coderushoj-infra",
+                    selected_pods,
+                )
+                self.assertIn(
+                    f"app.kubernetes.io/component: {component}",
+                    selected_pods,
+                )
+                self.assertIn("app.kubernetes.io/instance: coderushoj", policy)
+                for source in sources:
+                    self.assertIn(source, policy)
+                self.assertIn(f"port: {port}", policy)
+
+        self.assertNotIn("name: coderushoj-infra-allow-applications\n", rendered)
+
+    def test_infrastructure_internal_network_is_limited_to_real_rocketmq_dependencies(self):
+        rendered = self.render()
+        self.assertNotIn("name: coderushoj-infra-allow-infra-internal\n", rendered)
+        self.assertNotIn("namespaceSelector: {}", rendered)
+
+        dns = self.network_policy(
+            rendered,
+            "coderushoj-infra-allow-rocketmq-dns-egress",
+        )
+        self.assertIn("kubernetes.io/metadata.name: kube-system", dns)
+        self.assertIn("k8s-app: kube-dns", dns)
+        self.assertIn("values: [rocketmq-broker, rocketmq-topic-bootstrap]", dns)
+
+        broker_egress = self.network_policy(
+            rendered,
+            "coderushoj-infra-allow-rocketmq-broker-egress",
+        )
+        self.assertIn("app.kubernetes.io/component: rocketmq-broker", broker_egress)
+        self.assertIn("app.kubernetes.io/component: rocketmq-namesrv", broker_egress)
+        self.assertIn("port: 9876", broker_egress)
+
+        topic_egress = self.network_policy(
+            rendered,
+            "coderushoj-infra-allow-rocketmq-topic-bootstrap-egress",
+        )
+        for component, port in (
+            ("rocketmq-namesrv", 9876),
+            ("rocketmq-broker", 10911),
+        ):
+            self.assertIn(f"app.kubernetes.io/component: {component}", topic_egress)
+            self.assertIn(f"port: {port}", topic_egress)
+
+        namesrv_ingress = self.network_policy(
+            rendered,
+            "coderushoj-infra-allow-rocketmq-namesrv-ingress",
+        )
+        self.assertIn("values: [rocketmq-broker, rocketmq-topic-bootstrap]", namesrv_ingress)
+        self.assertIn("port: 9876", namesrv_ingress)
+
+        broker_ingress = self.network_policy(
+            rendered,
+            "coderushoj-infra-allow-rocketmq-broker-ingress",
+        )
+        self.assertIn("app.kubernetes.io/component: rocketmq-topic-bootstrap", broker_ingress)
+        self.assertIn("port: 10911", broker_ingress)
+
     def test_local_memory_requests_fit_workstation_budget(self):
         rendered = self.render()
         requests = re.findall(r"requests:\n\s+cpu: [^\n]+\n\s+memory: (\d+)(Mi|Gi)", rendered)
@@ -100,6 +186,11 @@ class InfrastructureRenderTest(unittest.TestCase):
         self.assertIn("coderushoj-production-secrets", rendered)
         self.assertNotIn("kind: Secret", rendered)
         self.assertNotIn("axllent/mailpit", rendered)
+        self.assertGreaterEqual(rendered.count("automountServiceAccountToken: false"), 6)
+        self.assertNotIn(
+            "name: coderushoj-infra-allow-applications-mailpit",
+            rendered,
+        )
 
 
 if __name__ == "__main__":

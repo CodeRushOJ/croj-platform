@@ -15,6 +15,8 @@ metadata:
   name: {{ .Release.Name }}-web-ingress
 spec:
   podSelector:
+    matchLabels:
+      {{- include "coderushoj.selectorLabels" . | nindent 6 }}
     matchExpressions:
       - key: app.kubernetes.io/component
         operator: In
@@ -44,7 +46,6 @@ spec:
               app.kubernetes.io/component: judging-server
       ports:
         - {protocol: TCP, port: 50051}
-        - {protocol: TCP, port: 1025}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -68,9 +69,11 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ .Release.Name }}-application-egress
+  name: {{ .Release.Name }}-dns-egress
 spec:
   podSelector:
+    matchLabels:
+      {{- include "coderushoj.selectorLabels" . | nindent 6 }}
     matchExpressions:
       - key: app.kubernetes.io/component
         operator: In
@@ -78,21 +81,178 @@ spec:
   policyTypes: [Egress]
   egress:
     - to:
-        - namespaceSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
       ports:
         - {protocol: UDP, port: 53}
         - {protocol: TCP, port: 53}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-backend-dependencies-egress
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "coderushoj.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+  policyTypes: [Egress]
+  egress:
     - to:
-        - podSelector: {}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Values.dependencies.instanceLabel }}
+              app.kubernetes.io/component: mysql
       ports:
         - {protocol: TCP, port: 3306}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Values.dependencies.instanceLabel }}
+              app.kubernetes.io/component: redis
+      ports:
         - {protocol: TCP, port: 6379}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Values.dependencies.instanceLabel }}
+              app.kubernetes.io/component: seaweedfs
+      ports:
         - {protocol: TCP, port: 8333}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Values.dependencies.instanceLabel }}
+              app.kubernetes.io/component: rocketmq-namesrv
+      ports:
         - {protocol: TCP, port: 9876}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Values.dependencies.instanceLabel }}
+              app.kubernetes.io/component: rocketmq-broker
+      ports:
+        - {protocol: TCP, port: 10911}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-judging-dependencies-egress
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "coderushoj.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: judging-server
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Values.dependencies.instanceLabel }}
+              app.kubernetes.io/component: mysql
+      ports:
+        - {protocol: TCP, port: 3306}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Values.dependencies.instanceLabel }}
+              app.kubernetes.io/component: redis
+      ports:
+        - {protocol: TCP, port: 6379}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Values.dependencies.instanceLabel }}
+              app.kubernetes.io/component: seaweedfs
+      ports:
+        - {protocol: TCP, port: 8333}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Values.dependencies.instanceLabel }}
+              app.kubernetes.io/component: rocketmq-namesrv
+      ports:
+        - {protocol: TCP, port: 9876}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Values.dependencies.instanceLabel }}
+              app.kubernetes.io/component: rocketmq-broker
+      ports:
+        - {protocol: TCP, port: 10911}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-judging-internal-egress
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "coderushoj.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: judging-server
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "coderushoj.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: backend
+      ports:
         - {protocol: TCP, port: 7999}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "coderushoj.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: sandbox
+      ports:
         - {protocol: TCP, port: 50051}
-    # Callback URLs are validated by the judge against SSRF/private-address rules.
-    # Production clusters should replace this with an audited egress gateway.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-backend-smtp-egress
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "coderushoj.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+  policyTypes: [Egress]
+  egress:
+    {{- if eq .Values.deploymentProfile "production" }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+        - ipBlock:
+            cidr: ::/0
+      ports:
+        - {protocol: TCP, port: {{ .Values.backend.smtp.port }}}
+    {{- else }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Values.dependencies.instanceLabel }}
+              app.kubernetes.io/component: mailpit
+      ports:
+        - {protocol: TCP, port: {{ .Values.backend.smtp.port }}}
+    {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-judging-webhook-egress
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "coderushoj.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: judging-server
+  policyTypes: [Egress]
+  egress:
+    # Callback URLs are also validated by the judge against SSRF,
+    # DNS-rebinding, private-address, and redirect rules.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

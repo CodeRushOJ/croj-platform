@@ -88,7 +88,7 @@ helm upgrade --install coderushoj ./charts/coderushoj \
 
 ### 不可变源码与开发镜像
 
-`config/source-lock.json` 固定 frontend、backend、judging-server、sandbox 和 docs 的仓库、40 位 commit、Dockerfile、构建上下文及精确 `:dev` 镜像名。校验器拒绝 branch/tag、外部仓库、路径穿越、未知字段、缺失组件和重复镜像：
+`config/source-lock.json` 固定 frontend、backend、judging-server、sandbox 和 docs 的仓库、40 位 commit、Dockerfile、构建上下文及精确 `:dev` 镜像名。校验器拒绝 branch/tag、外部仓库、路径穿越、未知字段、缺失组件和重复镜像。`docs` 项固定到已独立评审的平台基线，仅服务本地开发镜像和跨仓库检查，不作为协调发版文档镜像的输入；release workflow 会从已签名 tag 的当前 tree 直接构建正式文档镜像。
 
 ```bash
 make source-verify
@@ -139,6 +139,14 @@ CODERUSHOJ_CLUSTER_NAME=my-cluster make images-load
 7. 创建 `sandbox-workers` headless Service，由判题服务通过 Service DNS 和 gRPC `round_robin` 使用 EndpointSlice；
 8. 安装 `coderushoj.local`、`docs.coderushoj.local` 路由；Kind profile 额外开放 `judge.coderushoj.local/api/v1`；
 9. 验证 SQL、缓存、消息主题、S3 读写、工作负载探针和 Gateway 状态。
+
+Envoy Gateway controller 与 CRD 不属于两个应用 Helm release。`scripts/install-gateway.sh` 在应用 Chart 之前下载、校验并 server-side apply 固定版本的上游清单；应用 Chart 只管理 GatewayClass、Gateway、HTTPRoute 和 EnvoyProxy 等实例。升级 controller/CRD 必须作为独立平台变更：先审查 `config/versions.env` 中版本与校验和，备份现有 Gateway API 资源，运行安装脚本，确认 controller Available 和 CRD `storedVersions` 兼容，再升级应用 Chart。
+
+```bash
+scripts/install-gateway.sh
+kubectl get deployment -n envoy-gateway-system envoy-gateway
+kubectl get crd | grep -E 'gateway.networking.k8s.io|gateway.envoyproxy.io'
+```
 
 查看状态：
 
@@ -201,7 +209,7 @@ helm rollback coderushoj PREVIOUS_REVISION -n coderushoj --wait
 make smoke
 ```
 
-回滚 Helm 不会自动回滚数据库数据或不可逆 DDL；数据库迁移必须采用向前兼容的 expand/contract 策略。
+回滚应用 Chart 不会回滚 Envoy Gateway controller 或 CRD，也不会自动回滚数据库数据或不可逆 DDL；数据库迁移必须采用向前兼容的 expand/contract 策略。controller 回退需要单独评审目标清单与 CRD stored-version 兼容性，再 apply 先前固定且校验过的清单。不得在普通应用回滚中删除 Gateway API 或 Envoy Gateway CRD；删除 CRD 会影响全 cluster 的 Gateway 资源，并可能造成不可恢复的数据丢失。
 
 ## 构建多架构镜像
 

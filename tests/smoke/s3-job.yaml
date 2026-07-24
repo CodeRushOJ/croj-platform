@@ -12,6 +12,7 @@ spec:
         app.kubernetes.io/instance: coderushoj-infra
         app.kubernetes.io/component: s3-smoke
     spec:
+      automountServiceAccountToken: false
       restartPolicy: Never
       securityContext:
         runAsNonRoot: true

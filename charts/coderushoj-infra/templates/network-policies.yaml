@@ -15,7 +15,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "coderushoj-infra.fullname" . }}-allow-infra-internal
+  name: {{ include "coderushoj-infra.fullname" . }}-allow-rocketmq-dns-egress
   labels:
     {{- include "coderushoj-infra.labels" . | nindent 4 }}
 spec:
@@ -25,10 +25,34 @@ spec:
     matchExpressions:
       - key: app.kubernetes.io/component
         operator: In
-        values: [mysql, redis, rocketmq-namesrv, rocketmq-broker, rocketmq-topic-bootstrap, seaweedfs]
+        values: [rocketmq-broker, rocketmq-topic-bootstrap]
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "coderushoj-infra.fullname" . }}-allow-rocketmq-namesrv-ingress
+  labels:
+    {{- include "coderushoj-infra.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: rocketmq-namesrv
   policyTypes:
     - Ingress
-    - Egress
   ingress:
     - from:
         - podSelector:
@@ -37,23 +61,82 @@ spec:
             matchExpressions:
               - key: app.kubernetes.io/component
                 operator: In
-                values: [mysql, redis, rocketmq-namesrv, rocketmq-broker, rocketmq-topic-bootstrap, seaweedfs]
+                values: [rocketmq-broker, rocketmq-topic-bootstrap]
+      ports:
+        - {protocol: TCP, port: 9876}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "coderushoj-infra.fullname" . }}-allow-rocketmq-broker-ingress
+  labels:
+    {{- include "coderushoj-infra.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: rocketmq-broker
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: rocketmq-topic-bootstrap
+      ports:
+        - {protocol: TCP, port: 10911}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "coderushoj-infra.fullname" . }}-allow-rocketmq-broker-egress
+  labels:
+    {{- include "coderushoj-infra.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: rocketmq-broker
+  policyTypes:
+    - Egress
   egress:
     - to:
         - podSelector:
             matchLabels:
               app.kubernetes.io/instance: {{ .Release.Name }}
-            matchExpressions:
-              - key: app.kubernetes.io/component
-                operator: In
-                values: [mysql, redis, rocketmq-namesrv, rocketmq-broker, rocketmq-topic-bootstrap, seaweedfs]
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
+              app.kubernetes.io/component: rocketmq-namesrv
       ports:
-        - {protocol: UDP, port: 53}
-        - {protocol: TCP, port: 53}
+        - {protocol: TCP, port: 9876}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "coderushoj-infra.fullname" . }}-allow-rocketmq-topic-bootstrap-egress
+  labels:
+    {{- include "coderushoj-infra.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: rocketmq-topic-bootstrap
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: rocketmq-namesrv
+      ports:
+        - {protocol: TCP, port: 9876}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: rocketmq-broker
+      ports:
+        - {protocol: TCP, port: 10911}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -80,6 +163,9 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
       ports:
         - {protocol: UDP, port: 53}
         - {protocol: TCP, port: 53}
@@ -109,19 +195,21 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "coderushoj-infra.fullname" . }}-allow-applications
+  name: {{ include "coderushoj-infra.fullname" . }}-allow-applications-mysql
   labels:
     {{- include "coderushoj-infra.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: mysql
   policyTypes:
     - Ingress
   ingress:
     - from:
         - podSelector:
             matchLabels:
+              app.kubernetes.io/name: coderushoj
               app.kubernetes.io/instance: {{ .Values.applications.instanceLabel }}
             matchExpressions:
               - key: app.kubernetes.io/component
@@ -129,8 +217,132 @@ spec:
                 values: [backend, judging-server]
       ports:
         - {protocol: TCP, port: 3306}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "coderushoj-infra.fullname" . }}-allow-applications-redis
+  labels:
+    {{- include "coderushoj-infra.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: coderushoj
+              app.kubernetes.io/instance: {{ .Values.applications.instanceLabel }}
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [backend, judging-server]
+      ports:
         - {protocol: TCP, port: 6379}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "coderushoj-infra.fullname" . }}-allow-applications-seaweedfs
+  labels:
+    {{- include "coderushoj-infra.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: seaweedfs
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: coderushoj
+              app.kubernetes.io/instance: {{ .Values.applications.instanceLabel }}
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [backend, judging-server]
+      ports:
         - {protocol: TCP, port: 8333}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "coderushoj-infra.fullname" . }}-allow-applications-rocketmq-namesrv
+  labels:
+    {{- include "coderushoj-infra.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: rocketmq-namesrv
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: coderushoj
+              app.kubernetes.io/instance: {{ .Values.applications.instanceLabel }}
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [backend, judging-server]
+      ports:
         - {protocol: TCP, port: 9876}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "coderushoj-infra.fullname" . }}-allow-applications-rocketmq-broker
+  labels:
+    {{- include "coderushoj-infra.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: rocketmq-broker
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: coderushoj
+              app.kubernetes.io/instance: {{ .Values.applications.instanceLabel }}
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [backend, judging-server]
+      ports:
         - {protocol: TCP, port: 10911}
+{{- if .Values.mailpit.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "coderushoj-infra.fullname" . }}-allow-applications-mailpit
+  labels:
+    {{- include "coderushoj-infra.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: mailpit
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: coderushoj
+              app.kubernetes.io/instance: {{ .Values.applications.instanceLabel }}
+              app.kubernetes.io/component: backend
+      ports:
         - {protocol: TCP, port: 1025}
+{{- end }}

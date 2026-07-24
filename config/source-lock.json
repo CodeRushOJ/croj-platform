@@ -31,7 +31,7 @@
     },
     "docs": {
       "repository": "https://github.com/CodeRushOJ/croj-platform.git",
-      "commit": "8261c0152fe524fb2c98b5552e71a6cfe8099a69",
+      "commit": "80979e2d0ae344b88f7b634029f184ef69cbf565",
       "context": "docs",
       "dockerfile": "Dockerfile",
       "image": "ghcr.io/coderushoj/coderushoj-docs:dev"

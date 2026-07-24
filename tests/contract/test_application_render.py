@@ -28,6 +28,11 @@ class ApplicationRenderTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         return result.stdout
 
+    def network_policy(self, rendered, name):
+        marker = f"kind: NetworkPolicy\nmetadata:\n  name: {name}\n"
+        self.assertIn(marker, rendered, f"missing NetworkPolicy {name}")
+        return marker + rendered.split(marker, 1)[1].split("\n---", 1)[0]
+
     def test_default_profile_does_not_pull_unpublished_application_images(self):
         result = subprocess.run(
             ["helm", "template", "coderushoj", str(CHART), "--namespace", "coderushoj"],
@@ -140,6 +145,91 @@ class ApplicationRenderTest(unittest.TestCase):
         self.assertIn("kind: PodDisruptionBudget", rendered)
         self.assertGreaterEqual(rendered.count("mountPath: /var/cache/nginx"), 2)
         self.assertGreaterEqual(rendered.count("mountPath: /var/run"), 2)
+
+    def test_network_policies_are_release_scoped_and_target_specific(self):
+        rendered = self.render()
+        policy_names = (
+            "coderushoj-default-deny",
+            "coderushoj-web-ingress",
+            "coderushoj-sandbox-ingress",
+            "coderushoj-backend-internal-ingress",
+            "coderushoj-dns-egress",
+            "coderushoj-backend-dependencies-egress",
+            "coderushoj-judging-dependencies-egress",
+            "coderushoj-judging-internal-egress",
+            "coderushoj-backend-smtp-egress",
+            "coderushoj-judging-webhook-egress",
+        )
+        for name in policy_names:
+            with self.subTest(policy=name):
+                policy = self.network_policy(rendered, name)
+                selected_pods = policy.split("policyTypes:", 1)[0]
+                self.assertIn("app.kubernetes.io/instance: coderushoj", selected_pods)
+
+        self.assertNotIn("podSelector: {}", rendered)
+        self.assertNotIn("namespaceSelector: {}", rendered)
+
+        dns = self.network_policy(rendered, "coderushoj-dns-egress")
+        self.assertIn("kubernetes.io/metadata.name: kube-system", dns)
+        self.assertIn("k8s-app: kube-dns", dns)
+        self.assertIn("port: 53", dns)
+
+        for policy_name in (
+            "coderushoj-backend-dependencies-egress",
+            "coderushoj-judging-dependencies-egress",
+        ):
+            policy = self.network_policy(rendered, policy_name)
+            self.assertIn("app.kubernetes.io/instance: coderushoj-infra", policy)
+            for component, port in (
+                ("mysql", 3306),
+                ("redis", 6379),
+                ("rocketmq-namesrv", 9876),
+                ("rocketmq-broker", 10911),
+                ("seaweedfs", 8333),
+            ):
+                self.assertIn(f"app.kubernetes.io/component: {component}", policy)
+                self.assertIn(f"port: {port}", policy)
+
+        internal = self.network_policy(rendered, "coderushoj-judging-internal-egress")
+        for component, port in (("backend", 7999), ("sandbox", 50051)):
+            self.assertIn("app.kubernetes.io/instance: coderushoj", internal)
+            self.assertIn(f"app.kubernetes.io/component: {component}", internal)
+            self.assertIn(f"port: {port}", internal)
+
+        sandbox_ingress = self.network_policy(rendered, "coderushoj-sandbox-ingress")
+        self.assertIn("port: 50051", sandbox_ingress)
+        self.assertNotIn("port: 1025", sandbox_ingress)
+
+    def test_smtp_egress_uses_profile_port_and_external_scope(self):
+        development = self.render()
+        local_smtp = self.network_policy(development, "coderushoj-backend-smtp-egress")
+        self.assertIn("app.kubernetes.io/instance: coderushoj-infra", local_smtp)
+        self.assertIn("app.kubernetes.io/component: mailpit", local_smtp)
+        self.assertIn("port: 1025", local_smtp)
+        self.assertNotIn("cidr: 0.0.0.0/0", local_smtp)
+
+        digest = "sha256:" + "a" * 64
+        digest_args = sum(
+            (
+                ["--set-string", f"images.{name}.digest={digest}"]
+                for name in ("frontend", "backend", "judgingServer", "sandbox", "docs")
+            ),
+            [],
+        )
+        production = self.render(
+            "--values",
+            str(CHART / "values-production.yaml"),
+            *digest_args,
+            "--set",
+            "backend.smtp.host=smtp.operator.example",
+            "--set",
+            "backend.smtp.username=coderushoj@operator.example",
+        )
+        external_smtp = self.network_policy(production, "coderushoj-backend-smtp-egress")
+        self.assertIn("cidr: 0.0.0.0/0", external_smtp)
+        self.assertIn("cidr: ::/0", external_smtp)
+        self.assertIn("port: 465", external_smtp)
+        self.assertNotIn("app.kubernetes.io/component: mailpit", external_smtp)
 
     def test_values_schema_rejects_invalid_sandbox_concurrency(self):
         result = subprocess.run(

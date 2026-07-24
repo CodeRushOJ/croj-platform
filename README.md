@@ -23,7 +23,7 @@ make smoke
 
 ## 不可变跨仓库构建
 
-`config/source-lock.json` 是五个开发镜像唯一的源码输入。每项只接受 CodeRushOJ 官方 HTTPS 仓库、40 位小写 Git commit、受约束的构建路径和 Chart 使用的精确 `:dev` 镜像名；branch、tag 和 `latest` 都不能作为跨仓库验收真相。
+`config/source-lock.json` 是五个开发镜像唯一的源码输入。每项只接受 CodeRushOJ 官方 HTTPS 仓库、40 位小写 Git commit、受约束的构建路径和 Chart 使用的精确 `:dev` 镜像名；branch、tag 和 `latest` 都不能作为跨仓库验收真相。其中 `docs` 锁定到已独立评审的平台基线，只用于构建本地 `:dev` 文档镜像，不作为协调发版文档镜像的输入；正式文档镜像始终由 release workflow 从已签名 tag 的当前 tree 构建。
 
 ```bash
 make source-verify
@@ -52,4 +52,4 @@ make test-bundle-contract
 make smoke
 ```
 
-本地密钥位于 `.workspace/secrets/`，不会写入 Git。失败诊断位于 `.workspace/diagnostics/latest/`，默认不导出 Kubernetes Secret。
+本地密钥位于 `.workspace/secrets/`，不会写入 Git。失败诊断位于 `.workspace/diagnostics/latest/`，以受限权限保存资源状态和事件，默认不抓取应用日志或导出 Kubernetes Secret；共享前仍须按敏感运维数据审阅。

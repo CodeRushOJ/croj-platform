@@ -48,6 +48,19 @@ class DocumentationContractTest(unittest.TestCase):
         self.assertIn("恢复验证", backup)
         self.assertIn("SELECT 1", backup)
 
+    def test_gateway_controller_crds_and_rollback_boundaries_are_explicit(self):
+        quickstart = (DOCS / "guide/quickstart.md").read_text()
+        troubleshooting = (DOCS / "operations/troubleshooting.md").read_text()
+        combined = quickstart + troubleshooting
+        for statement in (
+            "Envoy Gateway controller 与 CRD 不属于两个应用 Helm release",
+            "scripts/install-gateway.sh",
+            "kubectl get crd",
+            "回滚应用 Chart 不会回滚 Envoy Gateway controller 或 CRD",
+            "不得在普通应用回滚中删除 Gateway API 或 Envoy Gateway CRD",
+        ):
+            self.assertIn(statement, combined)
+
     def test_architecture_and_release_history_are_explicit(self):
         architecture = (DOCS / "architecture/platform.md").read_text()
         self.assertIn("```mermaid", architecture)
@@ -96,6 +109,10 @@ class DocumentationContractTest(unittest.TestCase):
         ):
             self.assertIn(value, combined)
         self.assertIn("不会创建或启动 Kind 集群", combined)
+        self.assertIn("不作为协调发版文档镜像的输入", combined)
+
+        lock = (ROOT / "config/source-lock.json").read_text()
+        self.assertIn("80979e2d0ae344b88f7b634029f184ef69cbf565", lock)
 
     def test_docs_links_build(self):
         if not (DOCS / "pnpm-lock.yaml").is_file():

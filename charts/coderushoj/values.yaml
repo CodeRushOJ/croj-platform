@@ -22,6 +22,7 @@ secrets:
   name: coderushoj-local-secrets
 
 dependencies:
+  instanceLabel: coderushoj-infra
   mysql:
     host: coderushoj-infra-mysql
     port: 3306

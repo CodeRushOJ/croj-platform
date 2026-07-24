@@ -89,6 +89,13 @@ class GovernanceContractTest(unittest.TestCase):
             self.assertIn(command, workflow)
         self.assertIn("upload-artifact", workflow)
 
+    def test_ci_kubeconform_checks_default_enabled_and_production_renders(self):
+        workflow = self.read(".github/workflows/ci.yml")
+        self.assertIn("applications.enabled=true", workflow)
+        self.assertIn("charts/coderushoj/values-production.yaml", workflow)
+        self.assertGreaterEqual(workflow.count("kubeconform"), 4)
+        self.assertGreaterEqual(workflow.count("helm template coderushoj "), 3)
+
     def test_release_is_tag_gated_version_checked_and_immutable(self):
         workflow = self.read(".github/workflows/release.yml")
         self.assertIn("tags:", workflow)
@@ -99,6 +106,29 @@ class GovernanceContractTest(unittest.TestCase):
         self.assertIn("docker/build-push-action", workflow)
         self.assertIn("github.sha", workflow)
         self.assertIn("packages: write", workflow)
+
+    def test_first_release_version_and_notes_match_shipped_platform(self):
+        version = (ROOT / "VERSION").read_text().strip()
+        self.assertEqual("0.1.0", version)
+        for chart in ("charts/coderushoj/Chart.yaml", "charts/coderushoj-infra/Chart.yaml"):
+            manifest = self.read(chart)
+            self.assertIn("version: 0.1.0", manifest)
+            self.assertIn('appVersion: "0.1.0"', manifest)
+
+        changelog = self.read("CHANGELOG.md")
+        unreleased = changelog.split("## [Unreleased]", 1)[1].split("## [0.1.0]", 1)[0]
+        self.assertEqual("", unreleased.strip())
+        self.assertIn("## [0.1.0] - 2026-07-24", changelog)
+        release = changelog.split("## [0.1.0] - 2026-07-24", 1)[1].split("\n## [", 1)[0]
+        for shipped_fact in (
+            "source-lock.json",
+            "Mailpit",
+            "sandbox-workers",
+            "TestBundle v1",
+            "NetworkPolicy",
+            "尚未执行完整 Kind 端到端判题验收",
+        ):
+            self.assertIn(shipped_fact, release)
 
     def test_third_party_actions_are_commit_pinned(self):
         for relative_path in (".github/workflows/ci.yml", ".github/workflows/release.yml"):

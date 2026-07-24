@@ -66,7 +66,21 @@ class DocumentationContractTest(unittest.TestCase):
         troubleshooting = (DOCS / "operations/troubleshooting.md").read_text()
         self.assertIn("applications.judgingExternalAPIEnabled", quickstart)
         self.assertIn("judgingServer.externalAPI.enabled", quickstart)
-        self.assertIn("原子替换", troubleshooting)
+        for sequence in (
+            "启用顺序：infra → application",
+            "禁用顺序：application → infra",
+            "启用失败回滚：application → infra",
+            "禁用失败回滚：infra → application",
+        ):
+            self.assertIn(sequence, quickstart)
+        for mechanism in (
+            "mkdir 锁",
+            "journal/previous recovery",
+            "不可变 bundle",
+            "atomic pointer publish",
+        ):
+            self.assertIn(mechanism, troubleshooting)
+        self.assertNotIn("原子替换 `.workspace/diagnostics/latest/`", troubleshooting)
         self.assertIn("pods-logs.txt", troubleshooting)
 
     def test_architecture_and_release_history_are_explicit(self):

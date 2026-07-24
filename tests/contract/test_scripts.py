@@ -4,6 +4,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import time
 import unittest
 
 
@@ -27,6 +28,39 @@ SCRIPTS = (
 
 
 class ScriptContractTest(unittest.TestCase):
+    def diagnostics_fixture(self, directory):
+        project = pathlib.Path(directory) / "project"
+        scripts = project / "scripts"
+        scripts.mkdir(parents=True)
+        shutil.copy2(ROOT / "scripts/diagnostics.sh", scripts / "diagnostics.sh")
+        shutil.copy2(ROOT / "scripts/lib.sh", scripts / "lib.sh")
+
+        mock_bin = pathlib.Path(directory) / "bin"
+        mock_bin.mkdir()
+        mock = """#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ -n "${MOCK_DIAGNOSTICS_DELAY:-}" ]]; then
+  sleep "$MOCK_DIAGNOSTICS_DELAY"
+fi
+if [[ -n "${MOCK_DIAGNOSTICS_LATEST_ROOT:-}" \
+  && -n "${MOCK_DIAGNOSTICS_RECOVERY_VIOLATION:-}" \
+  && ! -L "$MOCK_DIAGNOSTICS_LATEST_ROOT/latest" ]]; then
+  printf 'capture started before recovery\\n' >"$MOCK_DIAGNOSTICS_RECOVERY_VIOLATION"
+fi
+printf 'mock diagnostic output\\n'
+"""
+        for command in ("kubectl", "helm"):
+            executable = mock_bin / command
+            executable.write_text(mock)
+            executable.chmod(0o755)
+
+        env = os.environ.copy()
+        env["PATH"] = f"{mock_bin}{os.pathsep}{env['PATH']}"
+        env["CODERUSHOJ_DIAGNOSTICS_LOCK_TIMEOUT_SECONDS"] = "10"
+        env["CODERUSHOJ_DIAGNOSTICS_STALE_LOCK_SECONDS"] = "1"
+        env["CODERUSHOJ_DIAGNOSTICS_RETAIN"] = "2"
+        return project, scripts / "diagnostics.sh", env
+
     def test_shell_scripts_are_strict_and_parse(self):
         for relative_path in SCRIPTS:
             with self.subTest(script=relative_path):
@@ -84,25 +118,13 @@ class ScriptContractTest(unittest.TestCase):
         contents = (ROOT / "scripts/diagnostics.sh").read_text()
         self.assertIn("umask 077", contents)
         self.assertNotIn("kubectl logs", contents)
-        self.assertNotIn("pods-logs.txt", contents)
+        self.assertIn("-name pods-logs.txt -exec rm -f", contents)
         self.assertNotIn("redacted diagnostics", contents)
         self.assertIn("sensitive diagnostics", contents)
 
     def test_diagnostics_atomically_replace_unsafe_latest_bundle(self):
         with tempfile.TemporaryDirectory() as directory:
-            project = pathlib.Path(directory) / "project"
-            scripts = project / "scripts"
-            scripts.mkdir(parents=True)
-            shutil.copy2(ROOT / "scripts/diagnostics.sh", scripts / "diagnostics.sh")
-            shutil.copy2(ROOT / "scripts/lib.sh", scripts / "lib.sh")
-
-            mock_bin = pathlib.Path(directory) / "bin"
-            mock_bin.mkdir()
-            mock = "#!/usr/bin/env bash\nprintf 'mock diagnostic output\\n'\n"
-            for command in ("kubectl", "helm"):
-                executable = mock_bin / command
-                executable.write_text(mock)
-                executable.chmod(0o755)
+            project, diagnostics_script, env = self.diagnostics_fixture(directory)
 
             diagnostics_root = project / ".workspace/diagnostics"
             latest = diagnostics_root / "latest"
@@ -112,10 +134,8 @@ class ScriptContractTest(unittest.TestCase):
             stale_log.write_text("historical application secret\n")
             stale_log.chmod(0o644)
 
-            env = os.environ.copy()
-            env["PATH"] = f"{mock_bin}{os.pathsep}{env['PATH']}"
             result = subprocess.run(
-                ["bash", str(scripts / "diagnostics.sh")],
+                ["bash", str(diagnostics_script)],
                 cwd=project,
                 env=env,
                 text=True,
@@ -124,6 +144,7 @@ class ScriptContractTest(unittest.TestCase):
             )
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
             self.assertFalse(stale_log.exists())
+            self.assertTrue(latest.is_symlink())
             self.assertEqual(
                 0o700,
                 stat.S_IMODE(latest.stat().st_mode),
@@ -133,61 +154,181 @@ class ScriptContractTest(unittest.TestCase):
             for path in files:
                 with self.subTest(path=path.name):
                     self.assertEqual(0o600, stat.S_IMODE(path.stat().st_mode))
-            self.assertEqual([], list(diagnostics_root.glob(".latest.*")))
-
-    def test_diagnostics_cleanup_retries_failed_bundle_restore(self):
-        with tempfile.TemporaryDirectory() as directory:
-            project = pathlib.Path(directory) / "project"
-            scripts = project / "scripts"
-            scripts.mkdir(parents=True)
-            shutil.copy2(ROOT / "scripts/diagnostics.sh", scripts / "diagnostics.sh")
-            shutil.copy2(ROOT / "scripts/lib.sh", scripts / "lib.sh")
-
-            mock_bin = pathlib.Path(directory) / "bin"
-            mock_bin.mkdir()
-            mock = "#!/usr/bin/env bash\nprintf 'mock diagnostic output\\n'\n"
-            for command in ("kubectl", "helm"):
-                executable = mock_bin / command
-                executable.write_text(mock)
-                executable.chmod(0o755)
-
-            real_mv = shutil.which("mv")
-            self.assertIsNotNone(real_mv)
-            mv_attempts = pathlib.Path(directory) / "mv-attempts"
-            fake_mv = mock_bin / "mv"
-            fake_mv.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -Eeuo pipefail\n"
-                f"attempts_file={str(mv_attempts)!r}\n"
-                'if [[ "${2:-}" == */latest ]]; then\n'
-                '  attempts="$(cat "$attempts_file" 2>/dev/null || printf 0)"\n'
-                '  attempts="$((attempts + 1))"\n'
-                '  printf "%s\\n" "$attempts" >"$attempts_file"\n'
-                '  if (( attempts <= 2 )); then exit 1; fi\n'
-                "fi\n"
-                f'exec {real_mv!r} "$@"\n'
+            self.assertEqual(
+                [],
+                list(diagnostics_root.rglob("pods-logs.txt")),
             )
-            fake_mv.chmod(0o755)
+            self.assertFalse((diagnostics_root / ".publish-journal").exists())
+            self.assertFalse((diagnostics_root / ".publish.lock").exists())
+
+    def test_diagnostics_recovers_sigkill_journal_and_stale_lock_before_capture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project, diagnostics_script, env = self.diagnostics_fixture(directory)
 
             diagnostics_root = project / ".workspace/diagnostics"
-            latest = diagnostics_root / "latest"
-            latest.mkdir(parents=True)
-            sentinel = latest / "sentinel.txt"
+            bundles = diagnostics_root / "bundles"
+            bundles.mkdir(parents=True)
+            previous = diagnostics_root / ".legacy.previous.crash"
+            previous.mkdir()
+            sentinel = previous / "sentinel.txt"
             sentinel.write_text("previous diagnostics\n")
+            (previous / "pods-logs.txt").write_text("stale secret log\n")
 
-            env = os.environ.copy()
-            env["PATH"] = f"{mock_bin}{os.pathsep}{env['PATH']}"
+            journal = diagnostics_root / ".publish-journal"
+            journal.mkdir()
+            (journal / "operation").write_text("legacy-migration\n")
+            (journal / "previous").write_text(".legacy.previous.crash\n")
+            (journal / "target").write_text("legacy-crash\n")
+
+            stale_lock = diagnostics_root / ".publish.lock"
+            stale_lock.mkdir()
+            (stale_lock / "pid").write_text("999999\n")
+            (stale_lock / "process-start").write_text("dead process\n")
+            (stale_lock / "token").write_text("dead-token\n")
+            (stale_lock / "created").write_text("1\n")
+
+            violation = pathlib.Path(directory) / "recovery-violation"
+            env["MOCK_DIAGNOSTICS_LATEST_ROOT"] = str(diagnostics_root)
+            env["MOCK_DIAGNOSTICS_RECOVERY_VIOLATION"] = str(violation)
+
             result = subprocess.run(
-                ["bash", str(scripts / "diagnostics.sh")],
+                ["bash", str(diagnostics_script)],
                 cwd=project,
                 env=env,
                 text=True,
                 capture_output=True,
                 check=False,
             )
-            self.assertNotEqual(0, result.returncode)
-            self.assertTrue(sentinel.exists(), "old diagnostics bundle was not restored")
-            self.assertEqual([], list(diagnostics_root.glob(".latest.*")))
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertFalse(violation.exists())
+            self.assertTrue((bundles / "legacy-crash/sentinel.txt").exists())
+            self.assertFalse(previous.exists())
+            self.assertFalse(journal.exists())
+            self.assertFalse(stale_lock.exists())
+            self.assertTrue((diagnostics_root / "latest").is_symlink())
+            self.assertEqual([], list(diagnostics_root.rglob("pods-logs.txt")))
+
+    def test_diagnostics_lock_serializes_concurrent_publishers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project, diagnostics_script, env = self.diagnostics_fixture(directory)
+            env["MOCK_DIAGNOSTICS_DELAY"] = "0.03"
+
+            processes = [
+                subprocess.Popen(
+                    ["bash", str(diagnostics_script)],
+                    cwd=project,
+                    env=env,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                for _ in range(2)
+            ]
+            for process in processes:
+                stdout, stderr = process.communicate(timeout=20)
+                self.assertEqual(0, process.returncode, stdout + stderr)
+
+            diagnostics_root = project / ".workspace/diagnostics"
+            latest = diagnostics_root / "latest"
+            self.assertTrue(latest.is_symlink())
+            self.assertTrue(latest.resolve().is_dir())
+            bundles = [
+                path
+                for path in (diagnostics_root / "bundles").iterdir()
+                if path.is_dir() and not path.name.startswith(".staging.")
+            ]
+            self.assertEqual(2, len(bundles))
+            self.assertFalse((diagnostics_root / ".publish.lock").exists())
+            self.assertEqual(
+                [],
+                [
+                    path
+                    for path in diagnostics_root.rglob("latest")
+                    if path != latest
+                ],
+            )
+
+    def test_diagnostics_reclaims_incomplete_owner_after_grace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project, diagnostics_script, env = self.diagnostics_fixture(directory)
+            env["CODERUSHOJ_DIAGNOSTICS_LOCK_TIMEOUT_SECONDS"] = "3"
+
+            diagnostics_root = project / ".workspace/diagnostics"
+            stale_lock = diagnostics_root / ".publish.lock"
+            stale_lock.mkdir(parents=True)
+            (stale_lock / "pid").write_text(f"{os.getpid()}\n")
+            (stale_lock / "created").write_text("1\n")
+
+            result = subprocess.run(
+                ["bash", str(diagnostics_script)],
+                cwd=project,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertTrue((diagnostics_root / "latest").is_symlink())
+            self.assertFalse(stale_lock.exists())
+
+    def test_diagnostics_steady_state_pointer_is_continuous_and_retained(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project, diagnostics_script, env = self.diagnostics_fixture(directory)
+            first = subprocess.run(
+                ["bash", str(diagnostics_script)],
+                cwd=project,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, first.returncode, first.stdout + first.stderr)
+
+            diagnostics_root = project / ".workspace/diagnostics"
+            latest = diagnostics_root / "latest"
+            first_bundle = latest.resolve()
+            env["MOCK_DIAGNOSTICS_DELAY"] = "0.03"
+            second = subprocess.Popen(
+                ["bash", str(diagnostics_script)],
+                cwd=project,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            pointer_was_broken = False
+            while second.poll() is None:
+                if not latest.is_symlink() or not latest.exists():
+                    pointer_was_broken = True
+                    break
+                time.sleep(0.002)
+            stdout, stderr = second.communicate(timeout=20)
+            self.assertEqual(0, second.returncode, stdout + stderr)
+            self.assertFalse(pointer_was_broken)
+            second_bundle = latest.resolve()
+            self.assertNotEqual(first_bundle, second_bundle)
+            self.assertTrue(first_bundle.exists())
+
+            env.pop("MOCK_DIAGNOSTICS_DELAY")
+            third = subprocess.run(
+                ["bash", str(diagnostics_script)],
+                cwd=project,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, third.returncode, third.stdout + third.stderr)
+            third_bundle = latest.resolve()
+            self.assertNotEqual(second_bundle, third_bundle)
+            self.assertFalse(first_bundle.exists())
+            self.assertTrue(second_bundle.exists())
+            bundles = [
+                path
+                for path in (diagnostics_root / "bundles").iterdir()
+                if path.is_dir() and not path.name.startswith(".staging.")
+            ]
+            self.assertEqual(2, len(bundles))
 
     @unittest.skipUnless(shutil.which("shellcheck"), "ShellCheck is not installed")
     def test_shellcheck_has_no_findings(self):

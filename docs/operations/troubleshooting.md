@@ -7,7 +7,9 @@ make diagnostics
 kubectl get events -n coderushoj --sort-by=.metadata.creationTimestamp
 ```
 
-诊断先写入权限 `0700` 的临时目录，文件固定为 `0600`，全部采集完成后再原子替换 `.workspace/diagnostics/latest/`；即使旧目录为宽权限，发布后也会收敛权限并删除历史 `pods-logs.txt`。异常或信号退出会清理临时目录，并在发布切换失败时恢复旧 bundle。诊断包含节点、工作负载元数据、事件、Pod describe 和 Helm release 列表，属于敏感运维数据，并非自动脱敏 payload；默认不抓取应用日志，也不请求 Secret 内容。上传或转发前仍要人工检查主机名、地址、事件消息和注解。
+诊断发布协议使用带 PID、进程启动指纹和创建时间 owner metadata 的原子 `mkdir 锁`串行化写入；死亡 PID、PID 复用和不完整 owner 会按受限宽限期回收。持锁后先执行 `journal/previous recovery`，因此上次进程即使被 SIGKILL，也会在本次采集开始前恢复可用 `latest`。旧式 `latest` 目录先删除历史 `pods-logs.txt`、收敛目录 `0700`/文件 `0600`，再写 migration journal 并转换为不可变 bundle。
+
+steady state 下，`.workspace/diagnostics/bundles/` 保存不可变 bundle，`latest` 是相对 symlink。新 bundle 完成后通过同文件系统临时 symlink 加 `os.replace` 执行 `atomic pointer publish`，读者只会看到完整的旧指针或新指针；默认保留最新两份 bundle，可用 `CODERUSHOJ_DIAGNOSTICS_RETAIN` 调整。EXIT/信号 trap 只清理当前进程的临时资源和自有锁，持久恢复依赖下次启动的 lock + journal 扫描，而不是依赖 trap。诊断包含节点、工作负载元数据、事件、Pod describe 和 Helm release 列表，属于敏感运维数据，并非自动脱敏 payload；默认不抓取应用日志，也不请求 Secret 内容。上传或转发前仍要人工检查主机名、地址、事件消息和注解。
 
 ## Colima 与镜像拉取
 

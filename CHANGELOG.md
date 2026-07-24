@@ -60,7 +60,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Kind 的两个工作节点新增 `coderushoj.io/sandbox=true` 专用调度标签。
 - 文档更新为长期运行沙箱、异步 REST、稳定 Webhook outbox 和 headless Service 架构，并记录本地/生产暴露差异。
 - 失败诊断按敏感运维数据以受限权限保存，默认不抓取应用日志；文档明确 Envoy Gateway controller/CRD 与应用 Helm release 的独立生命周期和回滚边界。
-- 失败诊断在权限收敛的临时目录完成采集后原子发布，替换旧 `latest` 时清除历史应用日志并保留异常恢复路径。
+- 失败诊断通过带 owner metadata/stale recovery 的 `mkdir` 锁串行化，legacy journal 可在 SIGKILL 后恢复；steady state 使用不可变 bundle 与原子 symlink pointer 发布，并清除历史应用日志。
 - 服务发现方向由历史原型中的 ZooKeeper 调整为 Kubernetes 原生 Service、EndpointSlice 与 Job 调度。
 - MySQL 被确认为权威数据源，Redis 仅作可重建加速层；隐藏测试数据和附件使用 S3 兼容的 SeaweedFS。
 - `make deploy && make smoke` 已在本机三节点 Kind 集群真实验证 MySQL `SELECT 1`、Redis `PONG`、RocketMQ topic、SeaweedFS S3 读写和 Gateway Programmed 状态。

@@ -74,7 +74,9 @@ class DocumentationContractTest(unittest.TestCase):
         ):
             self.assertIn(sequence, quickstart)
         for mechanism in (
-            "mkdir 锁",
+            "fcntl.flock",
+            "Python 3",
+            "Linux/macOS",
             "journal/previous recovery",
             "不可变 bundle",
             "atomic pointer publish",

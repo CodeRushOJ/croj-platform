@@ -13,16 +13,13 @@ readonly namespace="${1:-coderushoj}"
 readonly diagnostics_root="$CODERUSHOJ_ROOT/.workspace/diagnostics"
 readonly bundles_root="$diagnostics_root/bundles"
 readonly latest_link="$diagnostics_root/latest"
-readonly lock_dir="$diagnostics_root/.publish.lock"
+readonly lock_file="$diagnostics_root/.publish.lock"
 readonly journal_dir="$diagnostics_root/.publish-journal"
 readonly lock_timeout_seconds="${CODERUSHOJ_DIAGNOSTICS_LOCK_TIMEOUT_SECONDS:-30}"
-readonly stale_lock_seconds="${CODERUSHOJ_DIAGNOSTICS_STALE_LOCK_SECONDS:-5}"
 readonly retain_bundles="${CODERUSHOJ_DIAGNOSTICS_RETAIN:-2}"
 
 [[ "$lock_timeout_seconds" =~ ^[1-9][0-9]*$ ]] \
   || die "CODERUSHOJ_DIAGNOSTICS_LOCK_TIMEOUT_SECONDS must be a positive integer"
-[[ "$stale_lock_seconds" =~ ^[1-9][0-9]*$ ]] \
-  || die "CODERUSHOJ_DIAGNOSTICS_STALE_LOCK_SECONDS must be a positive integer"
 [[ "$retain_bundles" =~ ^[1-9][0-9]*$ ]] \
   || die "CODERUSHOJ_DIAGNOSTICS_RETAIN must be a positive integer"
 
@@ -30,26 +27,92 @@ umask 077
 mkdir -p "$diagnostics_root"
 chmod 700 "$diagnostics_root"
 
+inherited_lock_is_valid="false"
+if [[ "${CODERUSHOJ_DIAGNOSTICS_FCNTL_LOCK_FD:-}" == "9" ]] \
+  && python3 - "$lock_file" <<'PY'
+import fcntl
+import os
+import sys
+
+try:
+    descriptor = os.fstat(9)
+    lock_file = os.stat(sys.argv[1])
+    if (descriptor.st_dev, descriptor.st_ino) != (
+        lock_file.st_dev,
+        lock_file.st_ino,
+    ):
+        raise SystemExit(1)
+    fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except (BlockingIOError, OSError):
+    raise SystemExit(1)
+PY
+then
+  inherited_lock_is_valid="true"
+fi
+
+if [[ "$inherited_lock_is_valid" != "true" ]]; then
+  exec python3 - "$SCRIPT_DIR/diagnostics.sh" "$namespace" "$lock_file" \
+    "$lock_timeout_seconds" <<'PY'
+import fcntl
+import json
+import os
+import sys
+import time
+
+script, namespace, lock_path, timeout_text = sys.argv[1:]
+timeout = int(timeout_text)
+lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+os.fchmod(lock_fd, 0o600)
+deadline = time.monotonic() + timeout
+
+while True:
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        break
+    except BlockingIOError:
+        if time.monotonic() >= deadline:
+            print(
+                "[coderushoj] error: timed out waiting for diagnostics publish lock",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+        time.sleep(0.05)
+
+metadata = json.dumps(
+    {
+        "mechanism": "fcntl.flock",
+        "pid": os.getpid(),
+        "acquired_unix_ns": time.time_ns(),
+    },
+    sort_keys=True,
+).encode() + b"\n"
+os.ftruncate(lock_fd, 0)
+os.write(lock_fd, metadata)
+os.fsync(lock_fd)
+
+if lock_fd != 9:
+    os.dup2(lock_fd, 9, inheritable=True)
+    os.close(lock_fd)
+else:
+    os.set_inheritable(lock_fd, True)
+
+environment = os.environ.copy()
+environment["CODERUSHOJ_DIAGNOSTICS_FCNTL_LOCK_FD"] = "9"
+os.execve("/bin/bash", ["bash", script, namespace], environment)
+PY
+fi
+
+unset CODERUSHOJ_DIAGNOSTICS_FCNTL_LOCK_FD
 lock_token="$$-${RANDOM}-$(date +%s)"
-lock_held="false"
+lock_held="true"
 staging_dir=""
 temporary_link=""
 
-process_start() {
-  ps -p "$1" -o lstart= 2>/dev/null \
-    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
-}
-
 release_lock() {
-  if [[ "$lock_held" != "true" || ! -d "$lock_dir" ]]; then
-    return
+  if [[ "$lock_held" == "true" ]]; then
+    exec 9>&-
+    lock_held="false"
   fi
-  local owner_token=""
-  owner_token="$(cat "$lock_dir/token" 2>/dev/null || true)"
-  if [[ "$owner_token" == "$lock_token" ]]; then
-    rm -rf "$lock_dir"
-  fi
-  lock_held="false"
 }
 
 cleanup_process_state() {
@@ -69,65 +132,6 @@ handle_signal() {
 trap cleanup_process_state EXIT
 trap 'handle_signal 130' INT
 trap 'handle_signal 143' TERM
-
-lock_is_stale() {
-  local observed_since="$1"
-  local now owner_pid owner_start actual_start
-  now="$(date +%s)"
-  owner_pid="$(cat "$lock_dir/pid" 2>/dev/null || true)"
-  owner_start="$(cat "$lock_dir/process-start" 2>/dev/null || true)"
-
-  if [[ "$owner_pid" =~ ^[1-9][0-9]*$ ]]; then
-    if ! kill -0 "$owner_pid" 2>/dev/null; then
-      return 0
-    fi
-    actual_start="$(process_start "$owner_pid")"
-    if [[ -n "$owner_start" && -n "$actual_start" ]]; then
-      [[ "$owner_start" != "$actual_start" ]] && return 0
-      return 1
-    fi
-  fi
-
-  (( now - observed_since >= stale_lock_seconds ))
-}
-
-acquire_lock() {
-  local started deadline now observed_since observed_token owner_token quarantine
-  started="$(date +%s)"
-  deadline="$((started + lock_timeout_seconds))"
-  observed_since="$started"
-  observed_token=""
-
-  while ! mkdir "$lock_dir" 2>/dev/null; do
-    now="$(date +%s)"
-    owner_token="$(cat "$lock_dir/token" 2>/dev/null || true)"
-    if [[ "$owner_token" != "$observed_token" ]]; then
-      observed_token="$owner_token"
-      observed_since="$now"
-    fi
-
-    if lock_is_stale "$observed_since"; then
-      quarantine="$diagnostics_root/.publish.lock.stale.$lock_token"
-      if mv "$lock_dir" "$quarantine" 2>/dev/null; then
-        rm -rf "$quarantine"
-        observed_token=""
-        observed_since="$now"
-        continue
-      fi
-    fi
-
-    (( now < deadline )) || die "timed out waiting for diagnostics publish lock"
-    sleep 0.05
-  done
-
-  chmod 700 "$lock_dir"
-  printf '%s\n' "$$" >"$lock_dir/pid"
-  process_start "$$" >"$lock_dir/process-start"
-  printf '%s\n' "$lock_token" >"$lock_dir/token"
-  printf '%s\n' "$started" >"$lock_dir/created"
-  chmod 600 "$lock_dir"/*
-  lock_held="true"
-}
 
 safe_name() {
   [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && "$1" != "." && "$1" != ".." ]]
@@ -386,7 +390,6 @@ cleanup_old_bundles() {
   done < <(printf '%s\n' "${records[@]}" | sort)
 }
 
-acquire_lock
 recover_persistent_state
 
 sequence="$(next_sequence)"

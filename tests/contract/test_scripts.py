@@ -39,6 +39,14 @@ class ScriptContractTest(unittest.TestCase):
         mock_bin.mkdir()
         mock = """#!/usr/bin/env bash
 set -Eeuo pipefail
+if [[ -n "${MOCK_DIAGNOSTICS_CAPTURE_MARKER:-}" ]]; then
+  : >"$MOCK_DIAGNOSTICS_CAPTURE_MARKER"
+fi
+if [[ -n "${MOCK_DIAGNOSTICS_HOLD_FILE:-}" ]]; then
+  while [[ -e "$MOCK_DIAGNOSTICS_HOLD_FILE" ]]; do
+    sleep 0.02
+  done
+fi
 if [[ -n "${MOCK_DIAGNOSTICS_DELAY:-}" ]]; then
   sleep "$MOCK_DIAGNOSTICS_DELAY"
 fi
@@ -57,9 +65,16 @@ printf 'mock diagnostic output\\n'
         env = os.environ.copy()
         env["PATH"] = f"{mock_bin}{os.pathsep}{env['PATH']}"
         env["CODERUSHOJ_DIAGNOSTICS_LOCK_TIMEOUT_SECONDS"] = "10"
-        env["CODERUSHOJ_DIAGNOSTICS_STALE_LOCK_SECONDS"] = "1"
         env["CODERUSHOJ_DIAGNOSTICS_RETAIN"] = "2"
         return project, scripts / "diagnostics.sh", env
+
+    def wait_for_path(self, path, timeout=5):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if path.exists():
+                return
+            time.sleep(0.01)
+        self.fail(f"timed out waiting for {path}")
 
     def test_shell_scripts_are_strict_and_parse(self):
         for relative_path in SCRIPTS:
@@ -117,6 +132,9 @@ printf 'mock diagnostic output\\n'
     def test_diagnostics_are_restricted_and_omit_application_logs(self):
         contents = (ROOT / "scripts/diagnostics.sh").read_text()
         self.assertIn("umask 077", contents)
+        self.assertIn("fcntl.flock", contents)
+        self.assertNotIn("ps -p", contents)
+        self.assertNotIn("lock_is_stale", contents)
         self.assertNotIn("kubectl logs", contents)
         self.assertIn("-name pods-logs.txt -exec rm -f", contents)
         self.assertNotIn("redacted diagnostics", contents)
@@ -159,9 +177,11 @@ printf 'mock diagnostic output\\n'
                 list(diagnostics_root.rglob("pods-logs.txt")),
             )
             self.assertFalse((diagnostics_root / ".publish-journal").exists())
-            self.assertFalse((diagnostics_root / ".publish.lock").exists())
+            lock_file = diagnostics_root / ".publish.lock"
+            self.assertTrue(lock_file.is_file())
+            self.assertEqual(0o600, stat.S_IMODE(lock_file.stat().st_mode))
 
-    def test_diagnostics_recovers_sigkill_journal_and_stale_lock_before_capture(self):
+    def test_diagnostics_recovers_sigkill_journal_before_capture(self):
         with tempfile.TemporaryDirectory() as directory:
             project, diagnostics_script, env = self.diagnostics_fixture(directory)
 
@@ -181,11 +201,7 @@ printf 'mock diagnostic output\\n'
             (journal / "target").write_text("legacy-crash\n")
 
             stale_lock = diagnostics_root / ".publish.lock"
-            stale_lock.mkdir()
-            (stale_lock / "pid").write_text("999999\n")
-            (stale_lock / "process-start").write_text("dead process\n")
-            (stale_lock / "token").write_text("dead-token\n")
-            (stale_lock / "created").write_text("1\n")
+            stale_lock.write_text('{"pid": 999999, "mechanism": "legacy"}\n')
 
             violation = pathlib.Path(directory) / "recovery-violation"
             env["MOCK_DIAGNOSTICS_LATEST_ROOT"] = str(diagnostics_root)
@@ -204,7 +220,8 @@ printf 'mock diagnostic output\\n'
             self.assertTrue((bundles / "legacy-crash/sentinel.txt").exists())
             self.assertFalse(previous.exists())
             self.assertFalse(journal.exists())
-            self.assertFalse(stale_lock.exists())
+            self.assertTrue(stale_lock.is_file())
+            self.assertIn('"mechanism": "fcntl.flock"', stale_lock.read_text())
             self.assertTrue((diagnostics_root / "latest").is_symlink())
             self.assertEqual([], list(diagnostics_root.rglob("pods-logs.txt")))
 
@@ -238,7 +255,9 @@ printf 'mock diagnostic output\\n'
                 if path.is_dir() and not path.name.startswith(".staging.")
             ]
             self.assertEqual(2, len(bundles))
-            self.assertFalse((diagnostics_root / ".publish.lock").exists())
+            lock_file = diagnostics_root / ".publish.lock"
+            self.assertTrue(lock_file.is_file())
+            self.assertIn('"mechanism": "fcntl.flock"', lock_file.read_text())
             self.assertEqual(
                 [],
                 [
@@ -248,16 +267,158 @@ printf 'mock diagnostic output\\n'
                 ],
             )
 
-    def test_diagnostics_reclaims_incomplete_owner_after_grace(self):
+    def test_diagnostics_live_owner_is_not_reclaimed_across_timezones(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project, diagnostics_script, env = self.diagnostics_fixture(directory)
+            mock_ps = pathlib.Path(directory) / "bin/ps"
+            mock_ps.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -Eeuo pipefail\n"
+                'if [[ "${TZ:-}" == "UTC" ]]; then\n'
+                "  printf 'Mon Jan 01 00:00:00 2024\\n'\n"
+                "else\n"
+                "  printf 'Mon Jan 01 08:00:00 2024\\n'\n"
+                "fi\n"
+            )
+            mock_ps.chmod(0o755)
+
+            hold = pathlib.Path(directory) / "hold-first-capture"
+            first_marker = pathlib.Path(directory) / "first-capture"
+            second_marker = pathlib.Path(directory) / "second-capture"
+            hold.touch()
+
+            first_env = env.copy()
+            first_env["TZ"] = "UTC"
+            first_env["MOCK_DIAGNOSTICS_CAPTURE_MARKER"] = str(first_marker)
+            first_env["MOCK_DIAGNOSTICS_HOLD_FILE"] = str(hold)
+            first = subprocess.Popen(
+                ["bash", str(diagnostics_script)],
+                cwd=project,
+                env=first_env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.wait_for_path(first_marker)
+
+            second_env = env.copy()
+            second_env["TZ"] = "Asia/Shanghai"
+            second_env["MOCK_DIAGNOSTICS_CAPTURE_MARKER"] = str(second_marker)
+            second = subprocess.Popen(
+                ["bash", str(diagnostics_script)],
+                cwd=project,
+                env=second_env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            time.sleep(0.5)
+            entered_while_live = second_marker.exists()
+            hold.unlink()
+
+            results = []
+            for process in (first, second):
+                stdout, stderr = process.communicate(timeout=20)
+                results.append((process.returncode, stdout, stderr))
+            for returncode, stdout, stderr in results:
+                self.assertEqual(0, returncode, stdout + stderr)
+            self.assertFalse(
+                entered_while_live,
+                "a live owner was reclaimed after ps output changed with TZ",
+            )
+
+    def test_diagnostics_two_reclaimers_cannot_replace_a_new_live_owner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project, diagnostics_script, env = self.diagnostics_fixture(directory)
+            diagnostics_root = project / ".workspace/diagnostics"
+            diagnostics_root.mkdir(parents=True)
+            (diagnostics_root / ".publish.lock").touch()
+
+            coordination = pathlib.Path(directory) / "mv-coordination"
+            coordination.mkdir()
+            real_mv = shutil.which("mv")
+            self.assertIsNotNone(real_mv)
+            fake_mv = pathlib.Path(directory) / "bin/mv"
+            fake_mv.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -Eeuo pipefail\n"
+                f"real_mv={real_mv!r}\n"
+                'if [[ "${1:-}" == */.publish.lock '
+                '&& "${2:-}" == */.publish.lock.stale.* ]]; then\n'
+                '  if mkdir "$MOCK_DIAGNOSTICS_MV_COORDINATION/claim" '
+                "2>/dev/null; then\n"
+                '    "$real_mv" "$@"\n'
+                '    : >"$MOCK_DIAGNOSTICS_MV_COORDINATION/first-moved"\n'
+                "    exit 0\n"
+                "  fi\n"
+                '  while [[ ! -f "$MOCK_DIAGNOSTICS_MV_COORDINATION/first-moved" ]]; do\n'
+                "    sleep 0.01\n"
+                "  done\n"
+                '  while [[ ! -f "${1}/token" ]]; do\n'
+                "    sleep 0.01\n"
+                "  done\n"
+                '  exec "$real_mv" "$@"\n'
+                "fi\n"
+                'exec "$real_mv" "$@"\n'
+            )
+            fake_mv.chmod(0o755)
+
+            hold = pathlib.Path(directory) / "hold-captures"
+            hold.touch()
+            markers = [
+                pathlib.Path(directory) / "capture-one",
+                pathlib.Path(directory) / "capture-two",
+            ]
+            processes = []
+            for marker in markers:
+                process_env = env.copy()
+                process_env["MOCK_DIAGNOSTICS_MV_COORDINATION"] = str(coordination)
+                process_env["MOCK_DIAGNOSTICS_CAPTURE_MARKER"] = str(marker)
+                process_env["MOCK_DIAGNOSTICS_HOLD_FILE"] = str(hold)
+                processes.append(
+                    subprocess.Popen(
+                        ["bash", str(diagnostics_script)],
+                        cwd=project,
+                        env=process_env,
+                        text=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                    )
+                )
+
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and not any(
+                marker.exists() for marker in markers
+            ):
+                time.sleep(0.01)
+            self.assertTrue(any(marker.exists() for marker in markers))
+            time.sleep(0.5)
+            concurrent_captures = sum(marker.exists() for marker in markers)
+            hold.unlink()
+
+            results = []
+            for process in processes:
+                stdout, stderr = process.communicate(timeout=20)
+                results.append((process.returncode, stdout, stderr))
+            for returncode, stdout, stderr in results:
+                self.assertEqual(0, returncode, stdout + stderr)
+            self.assertEqual(
+                1,
+                concurrent_captures,
+                "a delayed stale observer replaced a newly acquired live lock",
+            )
+
+    def test_diagnostics_stale_metadata_cannot_block_kernel_lock(self):
         with tempfile.TemporaryDirectory() as directory:
             project, diagnostics_script, env = self.diagnostics_fixture(directory)
             env["CODERUSHOJ_DIAGNOSTICS_LOCK_TIMEOUT_SECONDS"] = "3"
 
             diagnostics_root = project / ".workspace/diagnostics"
             stale_lock = diagnostics_root / ".publish.lock"
-            stale_lock.mkdir(parents=True)
-            (stale_lock / "pid").write_text(f"{os.getpid()}\n")
-            (stale_lock / "created").write_text("1\n")
+            stale_lock.parent.mkdir(parents=True)
+            stale_lock.write_text(
+                f'{{"pid": {os.getpid()}, "incomplete_owner": true}}\n'
+            )
 
             result = subprocess.run(
                 ["bash", str(diagnostics_script)],
@@ -269,7 +430,25 @@ printf 'mock diagnostic output\\n'
             )
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
             self.assertTrue((diagnostics_root / "latest").is_symlink())
-            self.assertFalse(stale_lock.exists())
+            self.assertIn('"mechanism": "fcntl.flock"', stale_lock.read_text())
+
+    def test_diagnostics_spoofed_inherited_fd_cannot_bypass_kernel_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project, diagnostics_script, env = self.diagnostics_fixture(directory)
+            env["CODERUSHOJ_DIAGNOSTICS_FCNTL_LOCK_FD"] = "9"
+
+            result = subprocess.run(
+                ["bash", str(diagnostics_script)],
+                cwd=project,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            lock_file = project / ".workspace/diagnostics/.publish.lock"
+            self.assertTrue(lock_file.is_file())
+            self.assertIn('"mechanism": "fcntl.flock"', lock_file.read_text())
 
     def test_diagnostics_steady_state_pointer_is_continuous_and_retained(self):
         with tempfile.TemporaryDirectory() as directory:

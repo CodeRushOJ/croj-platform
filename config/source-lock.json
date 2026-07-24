@@ -3,14 +3,14 @@
   "sources": {
     "frontend": {
       "repository": "https://github.com/CodeRushOJ/croj-frontend.git",
-      "commit": "67ee84fb69517e3f1ed5de4333c8951547869cfd",
+      "commit": "e2dd4e463d1d391b0bf22c19dfe6575914cb9ec0",
       "context": ".",
       "dockerfile": "Dockerfile",
       "image": "ghcr.io/coderushoj/croj-frontend:dev"
     },
     "backend": {
       "repository": "https://github.com/CodeRushOJ/croj-backend.git",
-      "commit": "74e8f0488e67937e98ebf77b3d640866e00afd65",
+      "commit": "2af6b0c0d1dc8fdaa868090da0a467457159d258",
       "context": ".",
       "dockerfile": "Dockerfile",
       "image": "ghcr.io/coderushoj/croj-backend:dev"
@@ -24,17 +24,10 @@
     },
     "sandbox": {
       "repository": "https://github.com/CodeRushOJ/croj-sandbox.git",
-      "commit": "b12d9a6fb3c37878bb7aa568f4f22e6cde8ab492",
+      "commit": "2f53b617bd8f65fec0d1809830dcadb2ec70a19a",
       "context": ".",
       "dockerfile": "Dockerfile",
       "image": "ghcr.io/coderushoj/croj-sandbox:dev"
-    },
-    "docs": {
-      "repository": "https://github.com/CodeRushOJ/croj-platform.git",
-      "commit": "80979e2d0ae344b88f7b634029f184ef69cbf565",
-      "context": "docs",
-      "dockerfile": "Dockerfile",
-      "image": "ghcr.io/coderushoj/coderushoj-docs:dev"
     }
   }
 }

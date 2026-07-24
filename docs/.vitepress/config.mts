@@ -1,6 +1,13 @@
 import { withMermaid } from 'vitepress-plugin-mermaid'
 
+const docsBase = process.env.CODERUSHOJ_DOCS_BASE ?? '/croj-platform/'
+
+if (!docsBase.startsWith('/') || !docsBase.endsWith('/')) {
+  throw new Error('CODERUSHOJ_DOCS_BASE must start and end with "/"')
+}
+
 export default withMermaid({
+  base: docsBase,
   lang: 'zh-CN',
   title: 'CodeRushOJ',
   description: '可部署、可扩展、可验证的开源在线评测系统',
@@ -15,6 +22,7 @@ export default withMermaid({
     siteTitle: 'CodeRushOJ',
     nav: [
       { text: '快速开始', link: '/guide/quickstart' },
+      { text: '在线文档', link: '/guide/github-pages' },
       { text: '架构', link: '/architecture/platform' },
       { text: '运维', link: '/operations/troubleshooting' },
       { text: '发版', link: '/releases/' }
@@ -24,7 +32,10 @@ export default withMermaid({
         text: '开始使用',
         items: [
           { text: '平台概览', link: '/' },
-          { text: '安装与部署', link: '/guide/quickstart' }
+          { text: '安装与部署', link: '/guide/quickstart' },
+          { text: 'GitHub Pages', link: '/guide/github-pages' },
+          { text: '应用服务部署', link: '/guide/application-deployment' },
+          { text: 'Sandbox 部署', link: '/guide/sandbox-deployment' }
         ]
       },
       {
@@ -39,6 +50,7 @@ export default withMermaid({
       {
         text: '运维手册',
         items: [
+          { text: '三节点产品 E2E', link: '/operations/product-e2e' },
           { text: '故障排查', link: '/operations/troubleshooting' },
           { text: '备份与恢复', link: '/operations/backup-restore' }
         ]

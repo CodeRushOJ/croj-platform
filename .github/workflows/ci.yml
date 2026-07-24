@@ -152,3 +152,76 @@ jobs:
       - name: Delete reference cluster
         if: always()
         run: kind delete cluster --name coderushoj
+
+  platform-product-e2e:
+    name: Real three-node Kind product E2E
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - name: Check out platform repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Helm
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v4.2.3
+
+      - name: Install Kind
+        run: go install sigs.k8s.io/kind@v0.32.0
+
+      - name: Name the owned disposable cluster
+        run: |
+          cluster_name="croj-product-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "CROJ_E2E_CLUSTER_NAME=$cluster_name" >> "$GITHUB_ENV"
+          echo "CODERUSHOJ_CLUSTER_NAME=$cluster_name" >> "$GITHUB_ENV"
+
+      - name: Check out immutable component sources
+        run: scripts/checkout-sources.sh
+
+      - name: Build locked components and current-checkout Docs
+        run: scripts/build-dev-images.sh
+
+      - name: Create the owned three-node Kind cluster
+        run: |
+          kind create cluster \
+            --name "$CROJ_E2E_CLUSTER_NAME" \
+            --config config/kind/product-e2e.yaml
+
+      - name: Install policy-capable cluster networking
+        run: scripts/install-kind-networking.sh
+
+      - name: Load verified application images
+        run: scripts/load-dev-images.sh --cluster "$CROJ_E2E_CLUSTER_NAME"
+
+      - name: Load the pinned NetworkPolicy probe
+        run: |
+          source config/versions.env
+          docker pull "$E2E_NETWORK_PROBE_IMAGE"
+          kind load docker-image "$E2E_NETWORK_PROBE_IMAGE" \
+            --name "$CROJ_E2E_CLUSTER_NAME"
+
+      - name: Deploy dependencies, applications, and operator bootstrap
+        run: scripts/deploy-product-e2e.sh
+
+      - name: Run the real HTTP product and external judge loop
+        run: tests/e2e/product.sh
+
+      - name: Verify enforced NetworkPolicy isolation
+        run: tests/e2e/network-policy.sh
+
+      - name: Collect redacted product E2E diagnostics
+        if: failure()
+        run: scripts/diagnostics.sh || true
+
+      - name: Upload redacted product E2E diagnostics
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: product-e2e-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .workspace/diagnostics/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Delete owned product E2E cluster
+        if: always()
+        run: scripts/cleanup-product-e2e.sh "$CROJ_E2E_CLUSTER_NAME"

@@ -70,7 +70,7 @@ make deploy
 make smoke
 ```
 
-基础命令不会尝试拉取尚未发布的应用镜像。开发者从不可变源码锁构建五个本地镜像并载入 Kind 后，再显式启用应用 profile：
+基础命令不会尝试拉取尚未发布的应用镜像。开发者从不可变源码锁构建四个外部组件镜像，并从当前平台 checkout 构建 Docs 镜像；把这五个本地镜像载入 Kind 后，再显式启用应用 profile：
 
 ```bash
 make source-verify
@@ -88,7 +88,7 @@ helm upgrade --install coderushoj ./charts/coderushoj \
 
 ### 不可变源码与开发镜像
 
-`config/source-lock.json` 固定 frontend、backend、judging-server、sandbox 和 docs 的仓库、40 位 commit、Dockerfile、构建上下文及精确 `:dev` 镜像名。校验器拒绝 branch/tag、外部仓库、路径穿越、未知字段、缺失组件和重复镜像。`docs` 项固定到已独立评审的平台基线，仅服务本地开发镜像和跨仓库检查，不作为协调发版文档镜像的输入；release workflow 会从已签名 tag 的当前 tree 直接构建正式文档镜像。
+`config/source-lock.json` 固定 frontend、backend、judging-server 和 sandbox 四个外部仓库的 40 位 commit、Dockerfile、构建上下文及精确 `:dev` 镜像名。校验器拒绝 branch/tag、外部仓库、路径穿越、未知字段、缺失组件和重复镜像。Docs 不进入源码锁，也不会从旧平台提交构建；`images-build` 直接使用当前平台 checkout，并用当前 `GITHUB_SHA`（本地为 `HEAD`）标记 Docs 镜像。平台 checkout 必须完全干净，包括 tracked、staged 和 untracked 文件；若工作树不干净，或环境中的 `GITHUB_SHA` 与 checkout 的 `HEAD` 不同，构建和加载都会 fail closed，避免给未提交内容写入错误 provenance。release workflow 仍从已签名 tag 的当前 tree 构建正式文档镜像。
 
 ```bash
 make source-verify
@@ -111,7 +111,7 @@ CODERUSHOJ_SOURCES_DIR=/absolute/cache/path make source-checkout
 make test-bundle-contract
 ```
 
-构建会自动执行上述校验和 checkout，随后逐个调用 `docker buildx build --load`，并把锁定仓库与 commit 写入 OCI `source`/`revision` 标签：
+构建会自动执行上述校验和 checkout，随后逐个调用 `docker buildx build --load`。四个外部组件把锁定仓库与 commit 写入 OCI `source`/`revision` 标签，Docs 则写入平台官方仓库与当前 checkout revision：
 
 ```bash
 make images-build
@@ -119,7 +119,7 @@ docker image inspect ghcr.io/coderushoj/croj-judging-server:dev \
   --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
 ```
 
-加载是独立的显式步骤，只接受已经存在于本机 Docker，且 OCI `source`、`revision` 标签与源码锁完全一致的五个镜像。标签缺失或失配时会在调用 Kind 前失败；它不会创建或启动集群，集群不存在时也会直接失败：
+加载是独立的显式步骤，只接受已经存在于本机 Docker 的五个镜像。四个外部组件的 OCI `source`、`revision` 必须与源码锁完全一致，Docs 必须与当前平台 checkout 一致。标签缺失或失配时会在调用 Kind 前失败；它不会创建或启动集群，集群不存在时也会直接失败：
 
 ```bash
 make images-load
@@ -127,6 +127,8 @@ CODERUSHOJ_CLUSTER_NAME=my-cluster make images-load
 ```
 
 任一组件（包括后端和判题服务）的最终集成提交准备好后，只把对应 `commit` 更新为经评审且可从官方仓库 fetch 的 40 位对象 ID，然后依次运行 `make source-verify`、`make source-checkout`、`make test-bundle-contract`、`make images-build`。锁文件的 PR diff 是版本变更的审计记录；不要增加 branch 字段，也不要用可变 tag 替代 commit。该契约门禁只证明隐藏测试包兼容，完整业务闭环仍必须通过 Kind 端到端验收。
+
+CI 的 `platform-product-e2e` job 会构建上述四个锁定组件镜像和当前 workflow checkout 的 Docs 镜像，在自己命名的三节点 disposable Kind 集群中运行登录、FPS 导入、TestBundle、产品提交、外部异步判题、公告、题目讨论、题解、比赛、邮件和 NetworkPolicy 的真实闭环。完整信任边界、一次性管理员 bootstrap 和安全清理规则见[三节点产品 E2E](../operations/product-e2e.md)。
 
 部署会完成：
 

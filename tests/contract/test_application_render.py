@@ -146,6 +146,56 @@ class ApplicationRenderTest(unittest.TestCase):
         self.assertGreaterEqual(rendered.count("mountPath: /var/cache/nginx"), 2)
         self.assertGreaterEqual(rendered.count("mountPath: /var/run"), 2)
 
+    def test_admin_bootstrap_is_disabled_by_default_and_uses_a_one_shot_secret(self):
+        disabled = self.render()
+        self.assertNotIn(
+            "kind: Job\nmetadata:\n  name: coderushoj-admin-bootstrap",
+            disabled,
+        )
+        self.assertNotIn("BOOTSTRAP_ADMIN_PASSWORD", disabled)
+
+        enabled = self.render(
+            "--set",
+            "adminBootstrap.enabled=true",
+            "--set",
+            "adminBootstrap.secretName=coderushoj-e2e-admin-bootstrap",
+        )
+        job = enabled.split("name: coderushoj-admin-bootstrap", 1)[1]
+        self.assertIn("kind: Job", enabled)
+        self.assertIn("activeDeadlineSeconds: 300", job)
+        self.assertIn("restartPolicy: Never", job)
+        self.assertIn("name: CROJ_MODE", job)
+        self.assertIn('value: "bootstrap-admin"', job)
+        self.assertIn("name: BOOTSTRAP_ADMIN_USERNAME", job)
+        self.assertIn("name: BOOTSTRAP_ADMIN_EMAIL", job)
+        self.assertIn("name: BOOTSTRAP_ADMIN_PASSWORD", job)
+        self.assertIn("name: coderushoj-e2e-admin-bootstrap", job)
+        self.assertIn("key: username", job)
+        self.assertIn("key: email", job)
+        self.assertIn("key: password", job)
+        self.assertIn("automountServiceAccountToken: false", job)
+        self.assertIn("readOnlyRootFilesystem: true", job)
+
+        backend_deployment = enabled.split("kind: Deployment", 2)[2].split("---", 1)[0]
+        self.assertNotIn("BOOTSTRAP_ADMIN_", backend_deployment)
+        self.assertNotIn("coderushoj-e2e-admin-bootstrap", backend_deployment)
+
+    def test_admin_bootstrap_has_only_dns_and_mysql_network_access(self):
+        rendered = self.render(
+            "--set",
+            "adminBootstrap.enabled=true",
+            "--set",
+            "adminBootstrap.secretName=coderushoj-e2e-admin-bootstrap",
+        )
+        dns = self.network_policy(rendered, "coderushoj-dns-egress")
+        self.assertIn("admin-bootstrap", dns)
+        mysql = self.network_policy(rendered, "coderushoj-admin-bootstrap-mysql-egress")
+        self.assertIn("app.kubernetes.io/component: admin-bootstrap", mysql)
+        self.assertIn("app.kubernetes.io/component: mysql", mysql)
+        self.assertIn("port: 3306", mysql)
+        for forbidden_port in (6379, 8333, 9876, 10911, 1025, 50051):
+            self.assertNotIn(f"port: {forbidden_port}", mysql)
+
     def test_network_policies_are_release_scoped_and_target_specific(self):
         rendered = self.render()
         policy_names = (

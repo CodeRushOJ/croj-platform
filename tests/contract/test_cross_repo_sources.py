@@ -27,21 +27,21 @@ def load_lock_helper():
     spec.loader.exec_module(module)
     return module
 
-COMPONENTS = ("frontend", "backend", "judging-server", "sandbox", "docs")
+COMPONENTS = ("frontend", "backend", "judging-server", "sandbox")
 REPOSITORIES = {
     "frontend": "croj-frontend",
     "backend": "croj-backend",
     "judging-server": "croj-judging-server",
     "sandbox": "croj-sandbox",
-    "docs": "croj-platform",
 }
 IMAGES = {
     "frontend": "ghcr.io/coderushoj/croj-frontend:dev",
     "backend": "ghcr.io/coderushoj/croj-backend:dev",
     "judging-server": "ghcr.io/coderushoj/croj-judging-server:dev",
     "sandbox": "ghcr.io/coderushoj/croj-sandbox:dev",
-    "docs": "ghcr.io/coderushoj/coderushoj-docs:dev",
 }
+DOCS_IMAGE = "ghcr.io/coderushoj/coderushoj-docs:dev"
+PLATFORM_REPOSITORY = "https://github.com/CodeRushOJ/croj-platform.git"
 
 
 def run(command, **kwargs):
@@ -60,7 +60,7 @@ def make_lock(commits, path):
         sources[component] = {
             "repository": f"https://github.com/CodeRushOJ/{REPOSITORIES[component]}.git",
             "commit": commits[component],
-            "context": "docs" if component == "docs" else ".",
+            "context": ".",
             "dockerfile": "Dockerfile",
             "image": IMAGES[component],
         }
@@ -73,7 +73,7 @@ class SourceLockContractTest(unittest.TestCase):
         make_lock({component: str(index) * 40 for index, component in enumerate(COMPONENTS, 1)}, lock)
         return lock
 
-    def test_canonical_lock_is_valid_and_normalizes_exactly_five_sources(self):
+    def test_canonical_lock_is_valid_and_normalizes_exactly_four_external_sources(self):
         self.assertTrue(LOCK.is_file(), "config/source-lock.json is missing")
         self.assertTrue(VALIDATOR.is_file(), "scripts/verify-source-lock.py is missing")
 
@@ -83,7 +83,7 @@ class SourceLockContractTest(unittest.TestCase):
         rows = run(["python3", VALIDATOR, "rows", "--lock", LOCK])
         self.assertEqual(0, rows.returncode, rows.stdout + rows.stderr)
         parsed = [line.split("\t") for line in rows.stdout.splitlines()]
-        self.assertEqual(5, len(parsed))
+        self.assertEqual(4, len(parsed))
         self.assertEqual(list(COMPONENTS), [row[0] for row in parsed])
         for component, repository, commit, context, dockerfile, image in parsed:
             self.assertEqual(
@@ -117,7 +117,7 @@ class SourceLockContractTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             lock = self.valid_lock(temporary_directory)
             payload = json.loads(lock.read_text())
-            del payload["sources"]["docs"]
+            del payload["sources"]["sandbox"]
             payload["sources"]["frontend"]["context"] = "../outside"
             payload["sources"]["backend"]["repository"] = "https://example.com/backend.git"
             lock.write_text(json.dumps(payload))
@@ -166,7 +166,7 @@ class SourceLockContractTest(unittest.TestCase):
         self.assertEqual(0, records.returncode, records.stdout + records.stderr)
         fields = records.stdout.split("\x00")
         self.assertEqual("", fields.pop())
-        self.assertEqual(5 * 6, len(fields))
+        self.assertEqual(4 * 6, len(fields))
         self.assertEqual(list(COMPONENTS), fields[0::6])
         for script in (CHECKOUT, BUILD, LOAD):
             contents = script.read_text()
@@ -188,8 +188,7 @@ class GitFixtureMixin:
             run(["git", "init", "--initial-branch=main", working])
             run(["git", "-C", working, "config", "user.name", "Contract Test"])
             run(["git", "-C", working, "config", "user.email", "contract@example.test"])
-            context = working / "docs" if component == "docs" else working
-            context.mkdir(exist_ok=True)
+            context = working
             (context / "Dockerfile").write_text("FROM scratch\n")
             run(["git", "-C", working, "add", "."])
             commit = run(["git", "-C", working, "commit", "-m", "fixture"])
@@ -207,8 +206,12 @@ class GitFixtureMixin:
         self.bin = self.base / "bin"
         self.bin.mkdir()
         self.environment = os.environ.copy()
+        self.platform_revision = run(
+            ["git", "-C", ROOT, "rev-parse", "HEAD"]
+        ).stdout.strip()
         self.environment.update(
             {
+                "GITHUB_SHA": self.platform_revision,
                 "GIT_CONFIG_COUNT": "1",
                 "GIT_CONFIG_KEY_0": "url.file://"
                 + self.remotes.as_posix()
@@ -623,7 +626,7 @@ class CrossRepositoryCheckoutTest(GitFixtureMixin, unittest.TestCase):
 
         for stdout, stderr, returncode in results:
             self.assertEqual(0, returncode, stdout + stderr)
-        self.assertEqual(5, len(fetch_log.read_text().splitlines()))
+        self.assertEqual(4, len(fetch_log.read_text().splitlines()))
         for component in COMPONENTS:
             checkout = self.sources / component / self.commits[component]
             head = run([real_git, "-C", checkout, "rev-parse", "HEAD"])
@@ -646,6 +649,41 @@ class CrossRepositoryCheckoutTest(GitFixtureMixin, unittest.TestCase):
 class CrossRepositoryImageWorkflowTest(GitFixtureMixin, unittest.TestCase):
     def setUp(self):
         super().setUp()
+        self.platform_root = self.base / "platform"
+        (self.platform_root / "scripts").mkdir(parents=True)
+        (self.platform_root / "docs").mkdir()
+        for name in (
+            "build-dev-images.sh",
+            "checkout-lock.py",
+            "checkout-one-source.sh",
+            "checkout-sources.sh",
+            "lib.sh",
+            "load-dev-images.sh",
+            "verify-source-lock.py",
+        ):
+            shutil.copy2(ROOT / "scripts" / name, self.platform_root / "scripts" / name)
+        (self.platform_root / "docs" / "Dockerfile").write_text("FROM scratch\n")
+        run(["git", "init", "--initial-branch=main", self.platform_root])
+        run(["git", "-C", self.platform_root, "config", "user.name", "Contract Test"])
+        run(
+            [
+                "git",
+                "-C",
+                self.platform_root,
+                "config",
+                "user.email",
+                "contract@example.test",
+            ]
+        )
+        run(["git", "-C", self.platform_root, "add", "."])
+        commit = run(["git", "-C", self.platform_root, "commit", "-m", "platform fixture"])
+        self.assertEqual(0, commit.returncode, commit.stdout + commit.stderr)
+        self.platform_revision = run(
+            ["git", "-C", self.platform_root, "rev-parse", "HEAD"]
+        ).stdout.strip()
+        self.environment["GITHUB_SHA"] = self.platform_revision
+        self.build = self.platform_root / "scripts" / "build-dev-images.sh"
+        self.load = self.platform_root / "scripts" / "load-dev-images.sh"
         self.command_log = self.base / "commands.log"
         self.environment["PATH"] = self.bin.as_posix() + os.pathsep + self.environment["PATH"]
         self.environment["COMMAND_LOG"] = self.command_log.as_posix()
@@ -658,6 +696,10 @@ class CrossRepositoryImageWorkflowTest(GitFixtureMixin, unittest.TestCase):
                 f"{self.commits[component]!r} "
                 f"{'https://github.com/CodeRushOJ/' + REPOSITORIES[component] + '.git'!r} ;;"
             )
+        cases.append(
+            f"  {DOCS_IMAGE!r}) printf '%s\\n%s\\n' "
+            f"{self.platform_revision!r} {PLATFORM_REPOSITORY!r} ;;"
+        )
         self.write_executable(
             "docker",
             'printf \'docker\' >> "$COMMAND_LOG"\n'
@@ -680,20 +722,20 @@ class CrossRepositoryImageWorkflowTest(GitFixtureMixin, unittest.TestCase):
             + "\n  *) exit 2 ;;\nesac\n",
         )
 
-    def test_build_uses_all_locked_inputs_and_oci_provenance(self):
+    def test_build_uses_four_locked_inputs_and_current_platform_docs_provenance(self):
         self.write_executable("docker", 'printf \'%q \' "$@" >> "$COMMAND_LOG"\nprintf \'\\n\' >> "$COMMAND_LOG"\n')
 
         result = run(
-            [BUILD, "--lock", self.lock, "--root", self.sources],
+            [self.build, "--lock", self.lock, "--root", self.sources],
             env=self.environment,
         )
 
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         commands = self.command_log.read_text().splitlines()
         self.assertEqual(5, len(commands))
-        for component, command in zip(COMPONENTS, commands):
+        for component, command in zip(COMPONENTS, commands[:4]):
             checkout = self.sources / component / self.commits[component]
-            context = checkout / ("docs" if component == "docs" else ".")
+            context = checkout
             self.assertIn("buildx build --load", command)
             self.assertIn(f"--tag {IMAGES[component]}", command)
             self.assertIn(f"org.opencontainers.image.revision={self.commits[component]}", command)
@@ -703,6 +745,53 @@ class CrossRepositoryImageWorkflowTest(GitFixtureMixin, unittest.TestCase):
             )
             self.assertIn(f"--file {context / 'Dockerfile'}", command)
             self.assertTrue(command.endswith(context.as_posix() + " "))
+        docs_command = commands[4]
+        docs_context = self.platform_root / "docs"
+        self.assertIn("buildx build --load", docs_command)
+        self.assertIn(f"--tag {DOCS_IMAGE}", docs_command)
+        self.assertIn(
+            f"org.opencontainers.image.revision={self.platform_revision}",
+            docs_command,
+        )
+        self.assertIn(
+            f"org.opencontainers.image.source={PLATFORM_REPOSITORY}",
+            docs_command,
+        )
+        self.assertIn(f"--file {docs_context / 'Dockerfile'}", docs_command)
+        self.assertTrue(docs_command.endswith(docs_context.as_posix() + " "))
+
+    def test_current_platform_revision_rejects_tracked_staged_and_untracked_changes(self):
+        cases = {
+            "tracked": lambda: (self.platform_root / "docs" / "Dockerfile").write_text(
+                "FROM scratch\n# dirty\n"
+            ),
+            "staged": lambda: (
+                (self.platform_root / "docs" / "staged.txt").write_text("dirty\n"),
+                run(["git", "-C", self.platform_root, "add", "docs/staged.txt"]),
+            ),
+            "untracked": lambda: (
+                self.platform_root / "docs" / "untracked.txt"
+            ).write_text("dirty\n"),
+        }
+        for state, make_dirty in cases.items():
+            with self.subTest(state=state):
+                run(["git", "-C", self.platform_root, "reset", "--hard", "HEAD"])
+                run(["git", "-C", self.platform_root, "clean", "-fd"])
+                make_dirty()
+
+                result = run(
+                    [
+                        "bash",
+                        "-c",
+                        'source "$1"; current_platform_revision',
+                        "contract",
+                        self.platform_root / "scripts" / "lib.sh",
+                    ],
+                    env=self.environment,
+                )
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("not clean", result.stderr)
 
     def test_load_checks_images_then_calls_kind_once_without_creating_a_cluster(self):
         self.write_docker_inspector()
@@ -712,7 +801,7 @@ class CrossRepositoryImageWorkflowTest(GitFixtureMixin, unittest.TestCase):
         )
 
         result = run(
-            [LOAD, "--lock", self.lock, "--cluster", "contract-cluster"],
+            [self.load, "--lock", self.lock, "--cluster", "contract-cluster"],
             env=self.environment,
         )
 
@@ -726,6 +815,7 @@ class CrossRepositoryImageWorkflowTest(GitFixtureMixin, unittest.TestCase):
         self.assertIn("kind load docker-image", kind_command)
         for image in IMAGES.values():
             self.assertIn(image, kind_command)
+        self.assertIn(DOCS_IMAGE, kind_command)
         self.assertTrue(kind_command.endswith("--name contract-cluster"))
         self.assertNotIn("create", kind_command)
 
@@ -742,7 +832,7 @@ class CrossRepositoryImageWorkflowTest(GitFixtureMixin, unittest.TestCase):
                 environment["PROVENANCE_MODE"] = mode
 
                 result = run(
-                    [LOAD, "--lock", self.lock, "--cluster", "contract-cluster"],
+                    [self.load, "--lock", self.lock, "--cluster", "contract-cluster"],
                     env=environment,
                 )
 

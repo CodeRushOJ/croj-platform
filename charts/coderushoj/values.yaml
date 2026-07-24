@@ -18,6 +18,14 @@ deploymentProfile: development
 applications:
   enabled: false
 
+adminBootstrap:
+  enabled: false
+  secretName: ""
+  activeDeadlineSeconds: 300
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: "1", memory: 768Mi}
+
 secrets:
   name: coderushoj-local-secrets
 

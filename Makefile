@@ -4,7 +4,7 @@ test:
 	python3 -m unittest discover -s tests/contract -p 'test_*.py' -v
 
 lint:
-	shellcheck scripts/*.sh
+	shellcheck scripts/*.sh tests/e2e/*.sh
 	helm lint charts/coderushoj-infra
 	helm lint charts/coderushoj
 

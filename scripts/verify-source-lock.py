@@ -8,20 +8,18 @@ import re
 import sys
 
 
-COMPONENTS = ("frontend", "backend", "judging-server", "sandbox", "docs")
+COMPONENTS = ("frontend", "backend", "judging-server", "sandbox")
 REPOSITORIES = {
     "frontend": "croj-frontend",
     "backend": "croj-backend",
     "judging-server": "croj-judging-server",
     "sandbox": "croj-sandbox",
-    "docs": "croj-platform",
 }
 IMAGES = {
     "frontend": "ghcr.io/coderushoj/croj-frontend:dev",
     "backend": "ghcr.io/coderushoj/croj-backend:dev",
     "judging-server": "ghcr.io/coderushoj/croj-judging-server:dev",
     "sandbox": "ghcr.io/coderushoj/croj-sandbox:dev",
-    "docs": "ghcr.io/coderushoj/coderushoj-docs:dev",
 }
 SOURCE_FIELDS = {"repository", "commit", "context", "dockerfile", "image"}
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")

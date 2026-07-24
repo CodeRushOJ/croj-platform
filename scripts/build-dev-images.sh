@@ -28,6 +28,7 @@ require_command docker
 require_command python3
 "$SCRIPT_DIR/checkout-sources.sh" --lock "$lock_file" --root "$sources_root"
 sources_root="$(cd "$sources_root" && pwd)"
+platform_revision="$(current_platform_revision)"
 
 record_count=0
 while IFS= read -r -d '' component; do
@@ -48,4 +49,14 @@ while IFS= read -r -d '' component; do
     --file "$build_context/$dockerfile" \
     "$build_context"
 done < <(python3 "$SCRIPT_DIR/verify-source-lock.py" "records" --lock "$lock_file")
-[[ "$record_count" -eq 5 ]] || die "source lock yielded $record_count records, expected 5"
+[[ "$record_count" -eq 4 ]] || die "source lock yielded $record_count records, expected 4"
+
+log "building $CODERUSHOJ_DOCS_DEV_IMAGE from the current platform checkout@$platform_revision"
+docker buildx build \
+  --load \
+  --tag "$CODERUSHOJ_DOCS_DEV_IMAGE" \
+  --build-arg "VCS_REF=$platform_revision" \
+  --label "org.opencontainers.image.revision=$platform_revision" \
+  --label "org.opencontainers.image.source=$CODERUSHOJ_PLATFORM_REPOSITORY" \
+  --file "$CODERUSHOJ_ROOT/docs/Dockerfile" \
+  "$CODERUSHOJ_ROOT/docs"

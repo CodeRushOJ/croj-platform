@@ -100,4 +100,4 @@ while IFS= read -r -d '' component; do
     "$checkout_directory" \
     "$sources_root"
 done < <(python3 "$SCRIPT_DIR/verify-source-lock.py" "records" --lock "$lock_file")
-[[ "$record_count" -eq 5 ]] || die "source lock yielded $record_count records, expected 5"
+[[ "$record_count" -eq 4 ]] || die "source lock yielded $record_count records, expected 4"

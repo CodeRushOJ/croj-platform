@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "judgeMode": "ACM",
+  "checker": "exact",
+  "limits": {
+    "timeLimitMillis": 1000,
+    "memoryLimitMiB": 256
+  },
+  "cases": [
+    {"id": "case-1", "input": "1.in", "output": "1.out", "weight": 1},
+    {"id": "case-2", "input": "2.in", "output": "2.out", "weight": 1}
+  ]
+}

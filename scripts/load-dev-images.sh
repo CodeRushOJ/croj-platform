@@ -26,9 +26,11 @@ done
 
 [[ "$cluster_name" =~ ^[a-z0-9][a-z0-9.-]*$ ]] || die "cluster name contains unsupported characters"
 require_command docker
+require_command git
 require_command kind
 require_command python3
 python3 "$SCRIPT_DIR/verify-source-lock.py" validate --lock "$lock_file" >/dev/null
+platform_revision="$(current_platform_revision)"
 
 images=()
 record_count=0
@@ -49,7 +51,17 @@ while IFS= read -r -d '' _component; do
     die "development image provenance does not match source lock: $image"
   images+=("$image")
 done < <(python3 "$SCRIPT_DIR/verify-source-lock.py" "records" --lock "$lock_file")
-[[ "$record_count" -eq 5 ]] || die "source lock yielded $record_count records, expected 5"
+[[ "$record_count" -eq 4 ]] || die "source lock yielded $record_count records, expected 4"
 
-log "loading ${#images[@]} locked development images into Kind cluster $cluster_name"
+expected_docs_provenance="$platform_revision"$'\n'"$CODERUSHOJ_PLATFORM_REPOSITORY"
+actual_docs_provenance="$(
+  docker image inspect \
+    --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}{{ "\n" }}{{ index .Config.Labels "org.opencontainers.image.source" }}' \
+    "$CODERUSHOJ_DOCS_DEV_IMAGE"
+)" || die "development image is not available locally: $CODERUSHOJ_DOCS_DEV_IMAGE"
+[[ "$actual_docs_provenance" == "$expected_docs_provenance" ]] || \
+  die "development image provenance does not match the current platform checkout: $CODERUSHOJ_DOCS_DEV_IMAGE"
+images+=("$CODERUSHOJ_DOCS_DEV_IMAGE")
+
+log "loading ${#images[@]} development images into Kind cluster $cluster_name"
 kind load docker-image "${images[@]}" --name "$cluster_name"

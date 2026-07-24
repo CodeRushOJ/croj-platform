@@ -31,14 +31,13 @@ class TestBundleContractGateTest(unittest.TestCase):
                 "ghcr.io/coderushoj/croj-judging-server:dev",
             ),
             "sandbox": ("croj-sandbox", "d" * 40, "ghcr.io/coderushoj/croj-sandbox:dev"),
-            "docs": ("croj-platform", "e" * 40, "ghcr.io/coderushoj/coderushoj-docs:dev"),
         }
         sources = {}
         for component, (repository, commit, image) in repositories.items():
             sources[component] = {
                 "repository": f"https://github.com/CodeRushOJ/{repository}.git",
                 "commit": commit,
-                "context": "docs" if component == "docs" else ".",
+                "context": ".",
                 "dockerfile": "Dockerfile",
                 "image": image,
             }

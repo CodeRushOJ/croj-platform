@@ -99,7 +99,7 @@ class InfrastructureRenderTest(unittest.TestCase):
     def test_application_ingress_is_split_by_dependency_and_release(self):
         rendered = self.render()
         policies = {
-            "mysql": (3306, ("backend", "judging-server")),
+            "mysql": (3306, ("backend", "judging-server", "admin-bootstrap")),
             "seaweedfs": (8333, ("backend", "judging-server")),
             "rocketmq-namesrv": (9876, ("backend", "judging-server")),
             "rocketmq-broker": (10911, ("backend", "judging-server")),

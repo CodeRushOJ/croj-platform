@@ -1,4 +1,6 @@
+import json
 import pathlib
+import re
 import subprocess
 import unittest
 
@@ -12,6 +14,9 @@ class DocumentationContractTest(unittest.TestCase):
         required = (
             "index.md",
             "guide/quickstart.md",
+            "guide/application-deployment.md",
+            "guide/sandbox-deployment.md",
+            "guide/github-pages.md",
             "architecture/platform.md",
             "operations/troubleshooting.md",
             "operations/backup-restore.md",
@@ -22,10 +27,64 @@ class DocumentationContractTest(unittest.TestCase):
             self.assertTrue((DOCS / relative_path).is_file(), f"missing docs page: {relative_path}")
 
         config = (DOCS / ".vitepress/config.mts").read_text()
-        for path in ("/guide/quickstart", "/architecture/platform", "/operations/troubleshooting"):
+        for path in (
+            "/guide/quickstart",
+            "/guide/application-deployment",
+            "/guide/sandbox-deployment",
+            "/guide/github-pages",
+            "/architecture/platform",
+            "/operations/product-e2e",
+            "/operations/troubleshooting",
+        ):
             self.assertIn(path, config)
         self.assertIn("withMermaid", config)
         self.assertIn("superpowers/**", config)
+
+    def test_docs_default_to_project_pages_and_allow_custom_domain_base(self):
+        config = (DOCS / ".vitepress/config.mts").read_text()
+        self.assertIn("CODERUSHOJ_DOCS_BASE", config)
+        self.assertIn("'/croj-platform/'", config)
+        self.assertIn("base: docsBase", config)
+        self.assertIn("startsWith('/')", config)
+        self.assertIn("endsWith('/')", config)
+
+        pages_guide = (DOCS / "guide/github-pages.md").read_text()
+        for contract in (
+            "https://coderushoj.github.io/croj-platform/",
+            "CODERUSHOJ_DOCS_BASE",
+            "Settings → Pages",
+            "GitHub Actions",
+            "Kubernetes Gateway",
+        ):
+            self.assertIn(contract, pages_guide)
+
+    def test_pages_workflow_builds_pull_requests_and_deploys_only_trusted_refs(self):
+        workflow = (ROOT / ".github/workflows/pages.yml").read_text()
+        for trigger in ("pull_request:", "branches: [main]", "workflow_dispatch:"):
+            self.assertIn(trigger, workflow)
+        self.assertNotIn("pull_request_target", workflow)
+
+        for action in (
+            "actions/checkout",
+            "actions/setup-node",
+            "actions/configure-pages",
+            "actions/upload-pages-artifact",
+            "actions/deploy-pages",
+        ):
+            self.assertRegex(workflow, rf"uses: {re.escape(action)}@[0-9a-f]{{40}}")
+
+        self.assertIn("contents: read", workflow)
+        self.assertIn("pages: write", workflow)
+        self.assertIn("id-token: write", workflow)
+        self.assertIn("name: github-pages", workflow)
+        self.assertIn("url: ${{ steps.deployment.outputs.page_url }}", workflow)
+        self.assertIn("github.event_name != 'pull_request'", workflow)
+        self.assertIn("CODERUSHOJ_DOCS_BASE", workflow)
+        self.assertIn("/croj-platform/", workflow)
+        self.assertIn("path: docs/.vitepress/dist", workflow)
+        self.assertIn("group: pages-${{ github.repository }}", workflow)
+        self.assertIn("cancel-in-progress: false", workflow)
+        self.assertNotIn("pages-${{ github.ref }}", workflow)
 
     def test_quickstart_has_docker_and_kubernetes_paths(self):
         quickstart = (DOCS / "guide/quickstart.md").read_text()
@@ -104,6 +163,7 @@ class DocumentationContractTest(unittest.TestCase):
         self.assertIn("pnpm build", dockerfile)
         self.assertIn("pnpm-workspace.yaml", dockerfile)
         self.assertIn("CODERUSHOJ_DOCS_LAST_UPDATED=false", dockerfile)
+        self.assertIn("CODERUSHOJ_DOCS_BASE=/", dockerfile)
         self.assertGreaterEqual(dockerfile.count("@sha256:"), 2)
         self.assertIn("USER 101:101", dockerfile)
         self.assertIn("HEALTHCHECK", dockerfile)
@@ -117,8 +177,59 @@ class DocumentationContractTest(unittest.TestCase):
     def test_root_readme_points_to_quickstart(self):
         readme = (ROOT / "README.md").read_text()
         self.assertIn("docs/guide/quickstart.md", readme)
+        self.assertIn("docs/guide/application-deployment.md", readme)
+        self.assertIn("docs/guide/sandbox-deployment.md", readme)
+        self.assertIn("docs/guide/github-pages.md", readme)
         self.assertIn("croj-frontend", readme)
         self.assertIn("croj-backend", readme)
+
+    def test_application_deployment_is_copy_safe_and_matches_the_current_chart(self):
+        deployment = (DOCS / "guide/application-deployment.md").read_text()
+        for contract in (
+            "applications.enabled",
+            "secrets.name",
+            "scripts/generate-secrets.sh",
+            "values-production.yaml",
+            "images.backend.digest",
+            "images.frontend.digest",
+            "images.judgingServer.digest",
+            "images.sandbox.digest",
+            "images.docs.digest",
+            "BACKEND_INTERNAL_URL",
+            "SANDBOX_GRPC_TARGET",
+            "sandbox-workers",
+            "TestBundle",
+            "adminBootstrap.enabled",
+            "scripts/install-gateway.sh",
+            "helm upgrade --install",
+            "helm rollback",
+        ):
+            self.assertIn(contract, deployment)
+        self.assertNotIn("replace-with-real-password", deployment)
+        self.assertNotIn("backend.existingSecret.name", deployment)
+
+    def test_sandbox_deployment_documents_current_security_and_discovery(self):
+        deployment = (DOCS / "guide/sandbox-deployment.md").read_text()
+        for contract in (
+            "sandbox-workers",
+            "dns:///sandbox-workers:50051",
+            "round_robin",
+            "EndpointSlice",
+            "CROJ_SANDBOX_INSTANCE_ID",
+            "coderushoj.io/sandbox=true",
+            "values-kind-app.yaml",
+            "values-production.yaml",
+            "images.sandbox.digest",
+            "privileged",
+            "hostPID",
+            "/usr/bin/nsenter",
+            "Calico",
+            "NetworkPolicy",
+            "maxConcurrency",
+            "EndpointSlice",
+            "两个",
+        ):
+            self.assertIn(contract, deployment)
 
     def test_source_lock_workflow_is_documented(self):
         readme = (ROOT / "README.md").read_text()
@@ -135,10 +246,14 @@ class DocumentationContractTest(unittest.TestCase):
         ):
             self.assertIn(value, combined)
         self.assertIn("不会创建或启动 Kind 集群", combined)
-        self.assertIn("不作为协调发版文档镜像的输入", combined)
+        self.assertIn("当前平台 checkout", combined)
 
-        lock = (ROOT / "config/source-lock.json").read_text()
-        self.assertIn("80979e2d0ae344b88f7b634029f184ef69cbf565", lock)
+        lock = json.loads((ROOT / "config/source-lock.json").read_text())
+        self.assertEqual(
+            {"frontend", "backend", "judging-server", "sandbox"},
+            set(lock["sources"]),
+        )
+        self.assertNotIn("docs", lock["sources"])
 
     def test_docs_links_build(self):
         if not (DOCS / "pnpm-lock.yaml").is_file():

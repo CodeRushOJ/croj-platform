@@ -7,9 +7,9 @@ make diagnostics
 kubectl get events -n coderushoj --sort-by=.metadata.creationTimestamp
 ```
 
-诊断发布协议要求 Linux/macOS、Bash 与 Python 3，并由 Python `fcntl.flock` 在稳定的 `.publish.lock` inode 上获取内核 advisory lock；锁文件固定为 `0600` 且不会在发布者之间删除或替换。锁状态不依赖 PID、时区相关时间字符串或 stale metadata，进程及继承锁文件描述符的采集子进程退出后由内核释放；等待超时由 `CODERUSHOJ_DIAGNOSTICS_LOCK_TIMEOUT_SECONDS` 控制。持锁后先执行 `journal/previous recovery`，因此上次进程即使被 SIGKILL，也会在本次采集开始前恢复可用 `latest`。旧式 `latest` 目录先删除历史 `pods-logs.txt`、收敛目录 `0700`/文件 `0600`，再写 migration journal 并转换为不可变 bundle。
+诊断发布协议要求 Linux/macOS、Bash 与 Python 3，并由 Python wrapper 在稳定的 `.publish.flock` inode 上获取 `fcntl.flock` 内核 advisory lock，再直接使用当前 `$BASH` 执行内嵌 worker；脚本不会根据外部环境或共享 fd 重入临界区。锁文件固定为 `0600` 且不会在发布者之间删除或替换，等待超时由 `CODERUSHOJ_DIAGNOSTICS_LOCK_TIMEOUT_SECONDS` 控制。旧版本遗留的 legacy `.publish.lock/` 目录仅在 owner PID 已死亡、目录 inode 与 token 快照在隔离后仍一致时迁移；owner 仍存活或 metadata 不完整时会在采集开始前失败关闭，避免与旧发布者并发。持锁后先执行 `journal/previous recovery`，因此上次进程即使被 SIGKILL，也会在本次采集开始前恢复可用 `latest`。旧式 `latest` 目录先删除历史 `pods-logs.txt`、收敛目录 `0700`/文件 `0600`，再写 migration journal 并转换为不可变 bundle。
 
-steady state 下，`.workspace/diagnostics/bundles/` 保存不可变 bundle，`latest` 是相对 symlink。新 bundle 完成后通过同文件系统临时 symlink 加 `os.replace` 执行 `atomic pointer publish`，读者只会看到完整的旧指针或新指针；默认保留最新两份 bundle，可用 `CODERUSHOJ_DIAGNOSTICS_RETAIN` 调整。EXIT/信号 trap 只清理当前进程的临时资源并关闭继承的 lock fd，持久恢复依赖下次启动在持锁状态下执行 journal 扫描，而不是依赖 trap。诊断包含节点、工作负载元数据、事件、Pod describe 和 Helm release 列表，属于敏感运维数据，并非自动脱敏 payload；默认不抓取应用日志，也不请求 Secret 内容。上传或转发前仍要人工检查主机名、地址、事件消息和注解。
+steady state 下，`.workspace/diagnostics/bundles/` 保存不可变 bundle，`latest` 是相对 symlink。新 bundle 完成后通过同文件系统临时 symlink 加 `os.replace` 执行 `atomic pointer publish`，读者只会看到完整的旧指针或新指针；默认保留最新两份 bundle，可用 `CODERUSHOJ_DIAGNOSTICS_RETAIN` 调整。EXIT/信号 trap 只清理 worker 的临时资源；wrapper 与继承描述符的 worker/采集子进程全部退出后，锁由内核释放。持久恢复依赖下次启动在持锁状态下执行 journal 扫描，而不是依赖 trap。诊断包含节点、工作负载元数据、事件、Pod describe 和 Helm release 列表，属于敏感运维数据，并非自动脱敏 payload；默认不抓取应用日志，也不请求 Secret 内容。上传或转发前仍要人工检查主机名、地址、事件消息和注解。
 
 ## Colima 与镜像拉取
 

@@ -11,10 +11,8 @@ require_command python3
 
 readonly namespace="${1:-coderushoj}"
 readonly diagnostics_root="$CODERUSHOJ_ROOT/.workspace/diagnostics"
-readonly bundles_root="$diagnostics_root/bundles"
-readonly latest_link="$diagnostics_root/latest"
-readonly lock_file="$diagnostics_root/.publish.lock"
-readonly journal_dir="$diagnostics_root/.publish-journal"
+readonly lock_file="$diagnostics_root/.publish.flock"
+readonly legacy_lock_dir="$diagnostics_root/.publish.lock"
 readonly lock_timeout_seconds="${CODERUSHOJ_DIAGNOSTICS_LOCK_TIMEOUT_SECONDS:-30}"
 readonly retain_bundles="${CODERUSHOJ_DIAGNOSTICS_RETAIN:-2}"
 
@@ -27,39 +25,30 @@ umask 077
 mkdir -p "$diagnostics_root"
 chmod 700 "$diagnostics_root"
 
-inherited_lock_is_valid="false"
-if [[ "${CODERUSHOJ_DIAGNOSTICS_FCNTL_LOCK_FD:-}" == "9" ]] \
-  && python3 - "$lock_file" <<'PY'
-import fcntl
-import os
-import sys
-
-try:
-    descriptor = os.fstat(9)
-    lock_file = os.stat(sys.argv[1])
-    if (descriptor.st_dev, descriptor.st_ino) != (
-        lock_file.st_dev,
-        lock_file.st_ino,
-    ):
-        raise SystemExit(1)
-    fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
-except (BlockingIOError, OSError):
-    raise SystemExit(1)
-PY
-then
-  inherited_lock_is_valid="true"
-fi
-
-if [[ "$inherited_lock_is_valid" != "true" ]]; then
-  exec python3 - "$SCRIPT_DIR/diagnostics.sh" "$namespace" "$lock_file" \
-    "$lock_timeout_seconds" <<'PY'
+exec python3 - "$SCRIPT_DIR/diagnostics.sh" "$BASH" "$namespace" \
+  "$diagnostics_root" "$lock_file" "$legacy_lock_dir" \
+  "$lock_timeout_seconds" "$retain_bundles" "$SCRIPT_DIR" <<'PY'
 import fcntl
 import json
 import os
+import secrets
+import shutil
+import stat
+import subprocess
 import sys
 import time
 
-script, namespace, lock_path, timeout_text = sys.argv[1:]
+(
+    script,
+    bash_path,
+    namespace,
+    diagnostics_root,
+    lock_path,
+    legacy_lock_path,
+    timeout_text,
+    retain_bundles,
+    script_dir,
+) = sys.argv[1:]
 timeout = int(timeout_text)
 lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
 os.fchmod(lock_fd, 0o600)
@@ -78,8 +67,106 @@ while True:
             raise SystemExit(1)
         time.sleep(0.05)
 
+
+def legacy_pid_is_alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def read_legacy_owner():
+    try:
+        lock_stat = os.stat(legacy_lock_path, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+    if not stat.S_ISDIR(lock_stat.st_mode):
+        return None
+    try:
+        with open(os.path.join(legacy_lock_path, "pid"), encoding="utf-8") as stream:
+            pid_text = stream.read().strip()
+        with open(
+            os.path.join(legacy_lock_path, "token"),
+            encoding="utf-8",
+        ) as stream:
+            token = stream.read().strip()
+    except OSError:
+        return lock_stat, None, None
+    if not pid_text.isdigit() or int(pid_text) < 1 or not token:
+        return lock_stat, None, None
+    return lock_stat, int(pid_text), token
+
+
+legacy_deadline = time.monotonic() + timeout
+while True:
+    legacy_owner = read_legacy_owner()
+    if legacy_owner is None:
+        break
+    legacy_stat, legacy_pid, legacy_token = legacy_owner
+    if legacy_pid is None:
+        print(
+            "[coderushoj] error: legacy diagnostics lock has incomplete "
+            "owner metadata; refusing automatic migration",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    if legacy_pid_is_alive(legacy_pid):
+        if time.monotonic() >= legacy_deadline:
+            print(
+                "[coderushoj] error: live legacy diagnostics publisher "
+                f"{legacy_pid} still owns .publish.lock",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+        time.sleep(0.05)
+        continue
+
+    quarantine = (
+        f"{legacy_lock_path}.legacy-migration.{os.getpid()}."
+        f"{secrets.token_hex(8)}"
+    )
+    try:
+        os.rename(legacy_lock_path, quarantine)
+    except FileNotFoundError:
+        continue
+
+    quarantined_stat = os.stat(quarantine, follow_symlinks=False)
+    quarantined_pid_path = os.path.join(quarantine, "pid")
+    quarantined_token_path = os.path.join(quarantine, "token")
+    try:
+        with open(quarantined_pid_path, encoding="utf-8") as stream:
+            quarantined_pid = stream.read().strip()
+        with open(quarantined_token_path, encoding="utf-8") as stream:
+            quarantined_token = stream.read().strip()
+    except OSError:
+        quarantined_pid = ""
+        quarantined_token = ""
+
+    snapshot_matches = (
+        (legacy_stat.st_dev, legacy_stat.st_ino)
+        == (quarantined_stat.st_dev, quarantined_stat.st_ino)
+        and quarantined_pid == str(legacy_pid)
+        and quarantined_token == legacy_token
+    )
+    if not snapshot_matches:
+        if not os.path.lexists(legacy_lock_path):
+            os.rename(quarantine, legacy_lock_path)
+        print(
+            "[coderushoj] error: legacy diagnostics lock changed during "
+            "migration; refusing capture",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    shutil.rmtree(quarantine)
+    break
+
 metadata = json.dumps(
     {
+        "bash": bash_path,
         "mechanism": "fcntl.flock",
         "pid": os.getpid(),
         "acquired_unix_ns": time.time_ns(),
@@ -90,30 +177,52 @@ os.ftruncate(lock_fd, 0)
 os.write(lock_fd, metadata)
 os.fsync(lock_fd)
 
-if lock_fd != 9:
-    os.dup2(lock_fd, 9, inheritable=True)
-    os.close(lock_fd)
-else:
-    os.set_inheritable(lock_fd, True)
+with open(script, encoding="utf-8") as stream:
+    script_contents = stream.read()
+marker = "# __CODERUSHOJ_DIAGNOSTICS_WORKER__\n"
+try:
+    worker = script_contents.rsplit(marker, 1)[1]
+except IndexError:
+    print("[coderushoj] error: diagnostics worker marker is missing", file=sys.stderr)
+    raise SystemExit(1)
 
-environment = os.environ.copy()
-environment["CODERUSHOJ_DIAGNOSTICS_FCNTL_LOCK_FD"] = "9"
-os.execve("/bin/bash", ["bash", script, namespace], environment)
+completed = subprocess.run(
+    [
+        bash_path,
+        "-s",
+        "--",
+        namespace,
+        diagnostics_root,
+        retain_bundles,
+        script_dir,
+    ],
+    input=worker,
+    text=True,
+    pass_fds=(lock_fd,),
+    check=False,
+)
+raise SystemExit(completed.returncode)
 PY
-fi
 
-unset CODERUSHOJ_DIAGNOSTICS_FCNTL_LOCK_FD
+# __CODERUSHOJ_DIAGNOSTICS_WORKER__
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly namespace="$1"
+readonly diagnostics_root="$2"
+readonly retain_bundles="$3"
+readonly script_dir="$4"
+readonly bundles_root="$diagnostics_root/bundles"
+readonly latest_link="$diagnostics_root/latest"
+readonly journal_dir="$diagnostics_root/.publish-journal"
+
+# shellcheck source=scripts/lib.sh
+source "$script_dir/lib.sh"
+
+umask 077
 lock_token="$$-${RANDOM}-$(date +%s)"
-lock_held="true"
 staging_dir=""
 temporary_link=""
-
-release_lock() {
-  if [[ "$lock_held" == "true" ]]; then
-    exec 9>&-
-    lock_held="false"
-  fi
-}
 
 cleanup_process_state() {
   if [[ -n "$staging_dir" && -d "$staging_dir" ]]; then
@@ -122,7 +231,6 @@ cleanup_process_state() {
   if [[ -n "$temporary_link" && ( -e "$temporary_link" || -L "$temporary_link" ) ]]; then
     rm -f "$temporary_link"
   fi
-  release_lock
 }
 
 handle_signal() {
@@ -411,6 +519,5 @@ mv "$staging_dir" "$bundles_root/$bundle_name"
 staging_dir=""
 publish_pointer "$bundle_name"
 cleanup_old_bundles
-release_lock
 
 log "sensitive diagnostics published through $latest_link"

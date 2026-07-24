@@ -1,8 +1,10 @@
+import json
 import os
 import pathlib
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -177,7 +179,7 @@ printf 'mock diagnostic output\\n'
                 list(diagnostics_root.rglob("pods-logs.txt")),
             )
             self.assertFalse((diagnostics_root / ".publish-journal").exists())
-            lock_file = diagnostics_root / ".publish.lock"
+            lock_file = diagnostics_root / ".publish.flock"
             self.assertTrue(lock_file.is_file())
             self.assertEqual(0o600, stat.S_IMODE(lock_file.stat().st_mode))
 
@@ -201,7 +203,11 @@ printf 'mock diagnostic output\\n'
             (journal / "target").write_text("legacy-crash\n")
 
             stale_lock = diagnostics_root / ".publish.lock"
-            stale_lock.write_text('{"pid": 999999, "mechanism": "legacy"}\n')
+            stale_lock.mkdir()
+            (stale_lock / "pid").write_text("999999\n")
+            (stale_lock / "process-start").write_text("legacy\n")
+            (stale_lock / "token").write_text("dead-token\n")
+            (stale_lock / "created").write_text("1\n")
 
             violation = pathlib.Path(directory) / "recovery-violation"
             env["MOCK_DIAGNOSTICS_LATEST_ROOT"] = str(diagnostics_root)
@@ -220,10 +226,39 @@ printf 'mock diagnostic output\\n'
             self.assertTrue((bundles / "legacy-crash/sentinel.txt").exists())
             self.assertFalse(previous.exists())
             self.assertFalse(journal.exists())
-            self.assertTrue(stale_lock.is_file())
-            self.assertIn('"mechanism": "fcntl.flock"', stale_lock.read_text())
+            self.assertFalse(stale_lock.exists())
+            flock_file = diagnostics_root / ".publish.flock"
+            self.assertTrue(flock_file.is_file())
+            self.assertIn('"mechanism": "fcntl.flock"', flock_file.read_text())
             self.assertTrue((diagnostics_root / "latest").is_symlink())
             self.assertEqual([], list(diagnostics_root.rglob("pods-logs.txt")))
+
+    def test_diagnostics_refuses_to_migrate_a_live_legacy_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project, diagnostics_script, env = self.diagnostics_fixture(directory)
+            env["CODERUSHOJ_DIAGNOSTICS_LOCK_TIMEOUT_SECONDS"] = "1"
+            capture_marker = pathlib.Path(directory) / "capture-started"
+            env["MOCK_DIAGNOSTICS_CAPTURE_MARKER"] = str(capture_marker)
+
+            legacy_lock = project / ".workspace/diagnostics/.publish.lock"
+            legacy_lock.mkdir(parents=True)
+            (legacy_lock / "pid").write_text(f"{os.getpid()}\n")
+            (legacy_lock / "process-start").write_text("timezone-independent\n")
+            (legacy_lock / "token").write_text("live-token\n")
+            (legacy_lock / "created").write_text("1\n")
+
+            result = subprocess.run(
+                ["bash", str(diagnostics_script)],
+                cwd=project,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("live legacy diagnostics publisher", result.stderr)
+            self.assertFalse(capture_marker.exists())
+            self.assertTrue(legacy_lock.is_dir())
 
     def test_diagnostics_lock_serializes_concurrent_publishers(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -255,7 +290,7 @@ printf 'mock diagnostic output\\n'
                 if path.is_dir() and not path.name.startswith(".staging.")
             ]
             self.assertEqual(2, len(bundles))
-            lock_file = diagnostics_root / ".publish.lock"
+            lock_file = diagnostics_root / ".publish.flock"
             self.assertTrue(lock_file.is_file())
             self.assertIn('"mechanism": "fcntl.flock"', lock_file.read_text())
             self.assertEqual(
@@ -408,13 +443,134 @@ printf 'mock diagnostic output\\n'
                 "a delayed stale observer replaced a newly acquired live lock",
             )
 
+    def test_diagnostics_shared_inherited_ofd_cannot_authorize_two_publishers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project, diagnostics_script, env = self.diagnostics_fixture(directory)
+            diagnostics_root = project / ".workspace/diagnostics"
+            diagnostics_root.mkdir(parents=True)
+            shared_lock = diagnostics_root / ".publish.lock"
+            hold = pathlib.Path(directory) / "hold-captures"
+            hold.touch()
+            markers = [
+                pathlib.Path(directory) / "shared-capture-one",
+                pathlib.Path(directory) / "shared-capture-two",
+            ]
+
+            launcher = r"""
+import fcntl
+import json
+import os
+import pathlib
+import subprocess
+import sys
+import time
+
+script, project, lock_path, hold_path, marker_one, marker_two = sys.argv[1:]
+lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+fcntl.flock(lock_fd, fcntl.LOCK_EX)
+if lock_fd != 9:
+    os.dup2(lock_fd, 9, inheritable=True)
+    os.close(lock_fd)
+else:
+    os.set_inheritable(lock_fd, True)
+
+processes = []
+for marker in (marker_one, marker_two):
+    child_env = os.environ.copy()
+    child_env["CODERUSHOJ_DIAGNOSTICS_FCNTL_LOCK_FD"] = "9"
+    child_env["MOCK_DIAGNOSTICS_CAPTURE_MARKER"] = marker
+    child_env["MOCK_DIAGNOSTICS_HOLD_FILE"] = hold_path
+    processes.append(
+        subprocess.Popen(
+            ["bash", script],
+            cwd=project,
+            env=child_env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            pass_fds=(9,),
+        )
+    )
+os.close(9)
+
+deadline = time.monotonic() + 5
+marker_paths = [pathlib.Path(marker_one), pathlib.Path(marker_two)]
+while time.monotonic() < deadline and not any(path.exists() for path in marker_paths):
+    time.sleep(0.01)
+time.sleep(0.5)
+concurrent = sum(path.exists() for path in marker_paths)
+pathlib.Path(hold_path).unlink()
+
+results = []
+for process in processes:
+    stdout, stderr = process.communicate(timeout=20)
+    results.append(
+        {"returncode": process.returncode, "stdout": stdout, "stderr": stderr}
+    )
+print(json.dumps({"concurrent": concurrent, "results": results}))
+"""
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    launcher,
+                    str(diagnostics_script),
+                    str(project),
+                    str(shared_lock),
+                    str(hold),
+                    str(markers[0]),
+                    str(markers[1]),
+                ],
+                cwd=project,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=30,
+            )
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            payload = json.loads(result.stdout)
+            for process_result in payload["results"]:
+                self.assertEqual(
+                    0,
+                    process_result["returncode"],
+                    process_result["stdout"] + process_result["stderr"],
+                )
+            self.assertEqual(
+                1,
+                payload["concurrent"],
+                "two children sharing one locked OFD both entered capture",
+            )
+
+    def test_diagnostics_reuses_the_invoking_bash_without_hardcoded_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project, diagnostics_script, env = self.diagnostics_fixture(directory)
+            alternate_bash = pathlib.Path(directory) / "alternate-bash"
+            alternate_bash.symlink_to(shutil.which("bash"))
+
+            result = subprocess.run(
+                [str(alternate_bash), str(diagnostics_script)],
+                cwd=project,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            contents = diagnostics_script.read_text()
+            self.assertNotIn('"/bin/bash"', contents)
+            metadata = json.loads(
+                (project / ".workspace/diagnostics/.publish.flock").read_text()
+            )
+            self.assertEqual(str(alternate_bash), metadata["bash"])
+
     def test_diagnostics_stale_metadata_cannot_block_kernel_lock(self):
         with tempfile.TemporaryDirectory() as directory:
             project, diagnostics_script, env = self.diagnostics_fixture(directory)
             env["CODERUSHOJ_DIAGNOSTICS_LOCK_TIMEOUT_SECONDS"] = "3"
 
             diagnostics_root = project / ".workspace/diagnostics"
-            stale_lock = diagnostics_root / ".publish.lock"
+            stale_lock = diagnostics_root / ".publish.flock"
             stale_lock.parent.mkdir(parents=True)
             stale_lock.write_text(
                 f'{{"pid": {os.getpid()}, "incomplete_owner": true}}\n'
@@ -432,7 +588,7 @@ printf 'mock diagnostic output\\n'
             self.assertTrue((diagnostics_root / "latest").is_symlink())
             self.assertIn('"mechanism": "fcntl.flock"', stale_lock.read_text())
 
-    def test_diagnostics_spoofed_inherited_fd_cannot_bypass_kernel_lock(self):
+    def test_diagnostics_ignores_spoofed_inherited_fd_state(self):
         with tempfile.TemporaryDirectory() as directory:
             project, diagnostics_script, env = self.diagnostics_fixture(directory)
             env["CODERUSHOJ_DIAGNOSTICS_FCNTL_LOCK_FD"] = "9"
@@ -446,7 +602,7 @@ printf 'mock diagnostic output\\n'
                 check=False,
             )
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-            lock_file = project / ".workspace/diagnostics/.publish.lock"
+            lock_file = project / ".workspace/diagnostics/.publish.flock"
             self.assertTrue(lock_file.is_file())
             self.assertIn('"mechanism": "fcntl.flock"', lock_file.read_text())
 

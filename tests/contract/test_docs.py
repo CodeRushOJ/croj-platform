@@ -75,6 +75,8 @@ class DocumentationContractTest(unittest.TestCase):
             self.assertIn(sequence, quickstart)
         for mechanism in (
             "fcntl.flock",
+            ".publish.flock",
+            "legacy `.publish.lock/`",
             "Python 3",
             "Linux/macOS",
             "journal/previous recovery",

@@ -22,7 +22,7 @@ jobs:
   release:
     name: Verify and publish immutable v1 artifacts
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 120
     steps:
       - name: Check out annotated release tag
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -73,6 +73,19 @@ jobs:
           for heading in Features Fixes Security Migrations Operations "Known Limitations" Upgrade Rollback; do
             grep -Fq "### $heading" "$release_section_file"
           done
+
+      - name: Verify successful main CI and real product E2E
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/verify-main-ci.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow ci.yml \
+            --revision "$GITHUB_SHA" \
+            --branch main \
+            --required-job "Real three-node Kind product E2E" \
+            --timeout-seconds 5400 \
+            --poll-interval-seconds 20
 
       - name: Run the complete static release gate
         run: make validate

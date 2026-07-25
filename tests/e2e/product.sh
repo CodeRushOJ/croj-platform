@@ -598,7 +598,7 @@ request_json "$run_dir/announcement-admin-list.json" "$primary_host" GET \
 assert_result_success "$run_dir/announcement-admin-list.json"
 announcement_version="$(
   jq -er --argjson id "$announcement_id" \
-    '.data.records[] | select(.id == $id) | .version' \
+    '.data.items[] | select(.id == $id) | .version' \
     "$run_dir/announcement-admin-list.json"
 )"
 jq -n '{expiresAt:null}' >"$run_dir/announcement-publish.json"

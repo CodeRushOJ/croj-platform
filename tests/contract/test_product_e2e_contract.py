@@ -493,6 +493,17 @@ class ProductE2EContractTest(unittest.TestCase):
         self.assertIn("manual-public-new-title-list.json", script)
         self.assertIn("manual-admin-draft-detail.json", script)
 
+    def test_announcement_admin_page_uses_the_backend_items_contract(self):
+        script = PRODUCT_E2E.read_text()
+        self.assertIn(
+            "'.data.items[] | select(.id == $id) | .version'",
+            script,
+        )
+        self.assertNotIn(
+            "'.data.records[] | select(.id == $id) | .version'",
+            script,
+        )
+
     def test_manual_test_bundle_builder_preserves_declared_paths_and_regular_modes(self):
         self.assertTrue(BUNDLE_FIXTURE_BUILDER.is_file())
         with tempfile.TemporaryDirectory() as directory:

@@ -512,6 +512,8 @@ chmod 700 "$staging_dir"
 kubectl get nodes -o wide >"$staging_dir/nodes.txt" 2>&1 || true
 kubectl get pods,svc,pvc,job -n "$namespace" -o wide >"$staging_dir/workloads.txt" 2>&1 || true
 kubectl get gateway,httproute -n "$namespace" -o yaml >"$staging_dir/gateway.yaml" 2>&1 || true
+kubectl get networkpolicy -n "$namespace" -o yaml >"$staging_dir/network-policies.yaml" 2>&1 || true
+kubectl get endpointslice -n "$namespace" -o yaml >"$staging_dir/endpoint-slices.yaml" 2>&1 || true
 kubectl get events -n "$namespace" --sort-by=.metadata.creationTimestamp >"$staging_dir/events.txt" 2>&1 || true
 kubectl describe pods -n "$namespace" >"$staging_dir/pods-describe.txt" 2>&1 || true
 helm list -A >"$staging_dir/helm.txt" 2>&1 || true

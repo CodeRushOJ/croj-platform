@@ -236,7 +236,9 @@ jobs:
 
       - name: Collect redacted product E2E diagnostics
         if: failure()
-        run: scripts/diagnostics.sh || true
+        run: |
+          scripts/capture-product-e2e-logs.sh coderushoj || true
+          scripts/diagnostics.sh coderushoj || true
 
       - name: Delete owned product E2E cluster
         if: always()

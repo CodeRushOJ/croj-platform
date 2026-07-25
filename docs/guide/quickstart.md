@@ -201,6 +201,11 @@ kubectl port-forward -n coderushoj service/coderushoj-infra-mailpit 8025:8025
 # 浏览器打开 http://127.0.0.1:8025
 ```
 
+基础设施 Chart 的默认拒绝策略还会用 `mailpit.replyCIDRs` 限制 Mailpit SMTP
+响应只能返回 RFC1918 私网。若集群使用其他 Pod CIDR，必须在私有 values 中把
+该列表改为实际 Pod 网段；不要用 `0.0.0.0/0` 规避配置错误。产品 E2E 会在请求
+验证码前执行 SMTP 协议握手，因此网段配置错误会直接失败，而不会等待网关 504。
+
 生产 profile 不部署 Mailpit，并对空的 `backend.smtp.host`/`backend.smtp.username` fail closed。部署者必须在私有 values 中设置真实 SMTP host、port、username、auth/STARTTLS/SSL 模式，并在 `coderushoj-production-secrets` 中提供 `smtp-password`；不要把密码写入 values 或 Git。
 
 沙箱默认依赖专用节点标签而不假设集群存在某个 RuntimeClass。若生产集群已经由管理员安装隔离运行时，可设置 `sandbox.runtimeClassName`；不要填写一个未注册的名字，否则 Pod 会保持 Pending。

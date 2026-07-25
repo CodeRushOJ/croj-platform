@@ -82,6 +82,7 @@ class ProductE2EContractTest(unittest.TestCase):
         deploy = DEPLOY.read_text()
         self.assertIn("- name: Collect redacted product E2E diagnostics", workflow)
         self.assertIn("if: failure()", workflow)
+        self.assertIn("scripts/capture-product-e2e-logs.sh", workflow)
         self.assertIn("scripts/diagnostics.sh", workflow)
         self.assertIn("actions/upload-artifact@", workflow)
         self.assertIn(
@@ -101,6 +102,21 @@ class ProductE2EContractTest(unittest.TestCase):
         self.assertIn('logs "$pod"', capture)
         self.assertIn("--previous", capture)
         self.assertIn("REDACTED SENSITIVE LOG LINE", capture)
+
+    def test_product_gate_requires_an_smtp_banner_before_requesting_email(self):
+        product = PRODUCT_E2E.read_text()
+        self.assertIn('source "$ROOT_DIR/config/versions.env"', product)
+        self.assertIn('readonly smtp_probe_pod="coderushoj-smtp-protocol-probe"', product)
+        self.assertIn('--image="$E2E_NETWORK_PROBE_IMAGE"', product)
+        self.assertIn(
+            "app.kubernetes.io/component=backend",
+            product,
+        )
+        self.assertIn("Mailpit ESMTP Service ready", product)
+        self.assertLess(
+            product.index("Mailpit ESMTP Service ready"),
+            product.index("/api/email/code?email="),
+        )
 
     def test_product_gate_installs_and_runs_pinned_chromium_after_api_seed(self):
         workflow = WORKFLOW.read_text()

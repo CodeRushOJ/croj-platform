@@ -157,6 +157,30 @@ class InfrastructureRenderTest(unittest.TestCase):
 
         self.assertNotIn("name: coderushoj-infra-allow-applications\n", rendered)
 
+    def test_mailpit_can_reply_only_within_configured_private_networks(self):
+        rendered = self.render()
+        policy = self.network_policy(
+            rendered,
+            "coderushoj-infra-allow-mailpit-replies",
+        )
+        self.assertIn("app.kubernetes.io/component: mailpit", policy)
+        self.assertIn("policyTypes:\n    - Egress", policy)
+        for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"):
+            self.assertIn(f'cidr: "{cidr}"', policy)
+        self.assertNotIn('cidr: "0.0.0.0/0"', policy)
+        self.assertNotIn('cidr: "::/0"', policy)
+
+        custom = self.render(
+            "--set",
+            "mailpit.replyCIDRs[0]=192.168.0.0/16",
+        )
+        custom_policy = self.network_policy(
+            custom,
+            "coderushoj-infra-allow-mailpit-replies",
+        )
+        self.assertIn('cidr: "192.168.0.0/16"', custom_policy)
+        self.assertNotIn('cidr: "10.0.0.0/8"', custom_policy)
+
     def test_infrastructure_internal_network_is_limited_to_real_rocketmq_dependencies(self):
         rendered = self.render()
         self.assertNotIn("name: coderushoj-infra-allow-infra-internal\n", rendered)

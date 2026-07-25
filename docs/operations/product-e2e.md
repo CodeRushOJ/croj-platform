@@ -30,7 +30,9 @@
    相同的用户名、总分、分题分数、submission ID 和 achievedAt，作为真实 MySQL
    的评分与查询兼容门禁。
 6. 创建并公开全局公告、题目关联讨论、绑定题目版本的题解，以及编排了该不可变题目版本的公开比赛。
-7. 调用邮件验证码接口，并通过临时、受控的 Mailpit API port-forward 验证 SMTP 投递。port-forward 由脚本 EXIT trap 终止。
+7. 先以与 Backend 相同的 workload identity 启动固定 digest 的短期 probe，要求从
+   Mailpit 收到真实 SMTP `220` greeting，再调用邮件验证码接口并通过临时、受控的
+   Mailpit API port-forward 验证投递。port-forward 和 probe 都由脚本清理。
 8. 上传包含两个测试点的外部 TestBundle，调用异步 `POST /api/v1/judge-jobs`
    并轮询终态；结果必须只有一个成功的 compile 状态和两个 `ACCEPTED` case。
 9. 上传 manifest v2 OI bundle。选手程序只通过权重 30 的第一个 case，终态必须
@@ -52,8 +54,9 @@
 NameServer 已就绪、但 topic route 尚未传播完成的启动窗口。一次性 E2E 应用安装
 失败时不会先回滚 Pod；错误 trap 会在集群清理前抓取 current/previous 日志，并把
 包含 password、secret、token、cookie、Authorization、API key 或 DSN 标记的整行
-替换为 `[REDACTED SENSITIVE LOG LINE]`。其余 describe/events/Helm 状态仍由
-`scripts/diagnostics.sh` 的原子 bundle 发布协议收集。
+替换为 `[REDACTED SENSITIVE LOG LINE]`。其余 describe/events/Helm、
+NetworkPolicy 与 EndpointSlice 状态仍由 `scripts/diagnostics.sh` 的原子 bundle
+发布协议收集。
 
 ## 真实 Webhook 门禁
 

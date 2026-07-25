@@ -21,11 +21,14 @@ readonly primary_host="coderushoj.local"
 readonly judge_host="judge.coderushoj.local"
 readonly docs_host="docs.coderushoj.local"
 readonly gateway_url="${CODERUSHOJ_E2E_GATEWAY_URL:-http://127.0.0.1:8080}"
+readonly smtp_probe_pod="coderushoj-smtp-protocol-probe"
 run_dir="$(mktemp -d "$state_root/run.XXXXXX")"
 readonly run_dir
 port_forward_pid=""
 
 cleanup() {
+  kubectl delete pod "$smtp_probe_pod" \
+    --namespace "$namespace" --ignore-not-found --wait=false >/dev/null 2>&1 || true
   if [[ -n "$port_forward_pid" ]] && kill -0 "$port_forward_pid" 2>/dev/null; then
     kill "$port_forward_pid" 2>/dev/null || true
     wait "$port_forward_pid" 2>/dev/null || true
@@ -140,6 +143,40 @@ wait_for_http "$primary_host" "/api/actuator/health/readiness"
 wait_for_http "$primary_host" "/"
 wait_for_http "$docs_host" "/"
 wait_for_http "$judge_host" "/readyz"
+
+log "verifying the SMTP protocol path from the backend identity"
+kubectl delete pod "$smtp_probe_pod" \
+  --namespace "$namespace" --ignore-not-found --wait=true >/dev/null
+# The quoted program is evaluated inside the temporary in-cluster probe.
+# shellcheck disable=SC2016
+kubectl run "$smtp_probe_pod" \
+  --namespace "$namespace" \
+  --restart=Never \
+  --image="$E2E_NETWORK_PROBE_IMAGE" \
+  --image-pull-policy=Never \
+  --labels="app.kubernetes.io/name=coderushoj,app.kubernetes.io/instance=coderushoj,app.kubernetes.io/component=backend" \
+  --command -- \
+  sh -ec '
+    greeting="$(
+      command curl --silent --show-error --connect-timeout 3 --max-time 4 \
+        telnet://coderushoj-infra-mailpit:1025 2>/dev/null || true
+    )"
+    printf "%s\n" "$greeting"
+    case "$greeting" in
+      220*"Mailpit ESMTP Service ready"*) exit 0 ;;
+      *) exit 1 ;;
+    esac
+  ' >/dev/null
+if ! kubectl wait pod/"$smtp_probe_pod" \
+  --namespace "$namespace" \
+  --for=jsonpath='{.status.phase}'=Succeeded \
+  --timeout=15s >/dev/null; then
+  kubectl logs pod/"$smtp_probe_pod" --namespace "$namespace" >&2 || true
+  die "backend identity did not receive the Mailpit SMTP greeting"
+fi
+kubectl logs pod/"$smtp_probe_pod" --namespace "$namespace"
+kubectl delete pod "$smtp_probe_pod" \
+  --namespace "$namespace" --wait=true >/dev/null
 
 log "verifying real SMTP delivery through Mailpit"
 kubectl port-forward --namespace "$namespace" \

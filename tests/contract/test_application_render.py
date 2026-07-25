@@ -64,7 +64,9 @@ class ApplicationRenderTest(unittest.TestCase):
         )
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertGreaterEqual(result.stdout.count("kind: Deployment"), 5)
-        self.assertEqual(5, result.stdout.count("imagePullPolicy: Never"))
+        # Five long-running application containers plus the one-shot Judge
+        # schema migration init container all use the preloaded locked images.
+        self.assertEqual(6, result.stdout.count("imagePullPolicy: Never"))
         self.assertIn("name: coderushoj-judge-api", result.stdout)
 
     def test_renders_all_product_workloads_and_services(self):
@@ -89,6 +91,7 @@ class ApplicationRenderTest(unittest.TestCase):
             rendered,
         )
         self.assertIn("name: SANDBOX_ALLOW_LEGACY_ENDPOINT_SLICE\n              value: \"false\"", rendered)
+        self.assertIn("name: grpc\n      port: 50051\n      targetPort: grpc", rendered)
         self.assertNotIn("kind: Role", rendered)
         self.assertNotIn("kind: ClusterRole", rendered)
 
@@ -105,6 +108,19 @@ class ApplicationRenderTest(unittest.TestCase):
         private_render = self.render()
         self.assertNotIn("name: coderushoj-judge-api", private_render)
 
+    def test_external_judge_schema_migrates_before_the_runtime_starts(self):
+        rendered = self.render()
+        self.assertIn("initContainers:", rendered)
+        self.assertIn("name: migrate-external-judge-schema", rendered)
+        self.assertIn("command: [/app/judge-admin]", rendered)
+        self.assertIn("args: [schema, migrate]", rendered)
+        init = rendered.split("name: migrate-external-judge-schema", 1)[1].split(
+            "- name: judging-server", 1
+        )[0]
+        self.assertIn("name: JUDGE_DATABASE_DSN", init)
+        self.assertIn("key: judge-database-dsn", init)
+        self.assertIn("readOnlyRootFilesystem: true", init)
+
     def test_runtime_secrets_are_references_and_never_inline(self):
         rendered = self.render()
         for key in (
@@ -117,10 +133,18 @@ class ApplicationRenderTest(unittest.TestCase):
             "external-api-auth-pepper-base64",
             "external-idempotency-pepper-base64",
             "external-cursor-key-base64",
-            "external-source-key-base64",
+            "external-source-keys-json",
+            "judge-callback-keys-json",
+            "judge-database-dsn",
             "smtp-password",
         ):
             self.assertIn(f"key: {key}", rendered)
+        self.assertIn("name: EXTERNAL_SOURCE_KEY_VERSION\n              value: \"1\"", rendered)
+        self.assertIn("name: JUDGE_CALLBACK_KEY_VERSION\n              value: \"1\"", rendered)
+        self.assertIn("name: JUDGE_DATABASE_DSN", rendered)
+        self.assertIn("name: EXTERNAL_SOURCE_KEYS_JSON", rendered)
+        self.assertIn("name: JUDGE_CALLBACK_KEYS_JSON", rendered)
+        self.assertNotIn("name: EXTERNAL_SOURCE_KEY_BASE64", rendered)
         self.assertNotIn("replace-with", rendered)
         self.assertIn("name: SMTP_HOST", rendered)
         self.assertIn('value: "coderushoj-infra-mailpit"', rendered)
@@ -404,7 +428,9 @@ class ApplicationRenderTest(unittest.TestCase):
             "external-api-auth-pepper-base64",
             "external-idempotency-pepper-base64",
             "external-cursor-key-base64",
-            "external-source-key-base64",
+            "external-source-keys-json",
+            "judge-callback-keys-json",
+            "judge-database-dsn",
         ):
             self.assertNotIn(key, disabled)
         self.assertNotIn("containerPort: 8081", disabled)

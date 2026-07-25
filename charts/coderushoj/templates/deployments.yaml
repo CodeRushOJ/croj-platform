@@ -203,6 +203,24 @@ spec:
         runAsGroup: 65532
         fsGroup: 65532
         seccompProfile: {type: RuntimeDefault}
+      {{- if .Values.judgingServer.externalAPI.enabled }}
+      initContainers:
+        - name: migrate-external-judge-schema
+          image: {{ include "coderushoj.image" (dict "image" .Values.images.judgingServer "profile" .Values.deploymentProfile) }}
+          imagePullPolicy: {{ .Values.images.judgingServer.pullPolicy }}
+          command: [/app/judge-admin]
+          args: [schema, migrate]
+          env:
+            - name: JUDGE_DATABASE_DSN
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: judge-database-dsn}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 25m, memory: 32Mi}
+            limits: {cpu: 250m, memory: 128Mi}
+      {{- end }}
       containers:
         - name: judging-server
           image: {{ include "coderushoj.image" (dict "image" .Values.images.judgingServer "profile" .Values.deploymentProfile) }}
@@ -269,8 +287,16 @@ spec:
               valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: external-idempotency-pepper-base64}}
             - name: EXTERNAL_CURSOR_KEY_BASE64
               valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: external-cursor-key-base64}}
-            - name: EXTERNAL_SOURCE_KEY_BASE64
-              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: external-source-key-base64}}
+            - name: JUDGE_DATABASE_DSN
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: judge-database-dsn}}
+            - name: EXTERNAL_SOURCE_KEY_VERSION
+              value: "1"
+            - name: EXTERNAL_SOURCE_KEYS_JSON
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: external-source-keys-json}}
+            - name: JUDGE_CALLBACK_KEY_VERSION
+              value: "1"
+            - name: JUDGE_CALLBACK_KEYS_JSON
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: judge-callback-keys-json}}
             {{- end }}
           {{- if .Values.judgingServer.externalAPI.enabled }}
           readinessProbe:

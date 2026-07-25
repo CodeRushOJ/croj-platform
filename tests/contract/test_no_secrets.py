@@ -36,11 +36,15 @@ class SecretSafetyTest(unittest.TestCase):
             "external-api-auth-pepper-base64",
             "external-idempotency-pepper-base64",
             "external-cursor-key-base64",
-            "external-source-key-base64",
+            "external-source-keys-json",
+            "judge-callback-keys-json",
+            "judge-database-dsn",
             "smtp-password",
         ):
             self.assertIn(key, contents)
         self.assertIn("openssl rand -base64", contents)
+        self.assertIn("EXTERNAL_SOURCE_KEY_VERSION", contents)
+        self.assertIn("JUDGE_CALLBACK_KEY_VERSION", contents)
 
     def test_tracked_files_have_no_private_keys_or_jwts(self):
         result = subprocess.run(

@@ -216,9 +216,15 @@ jobs:
             --name "$CROJ_E2E_CLUSTER_NAME"
 
       - name: Deploy dependencies, applications, and operator bootstrap
+        env:
+          CODERUSHOJ_E2E_WEBHOOK_URL: ${{ secrets.PRODUCT_E2E_WEBHOOK_URL }}
         run: scripts/deploy-product-e2e.sh
 
       - name: Run the real HTTP product and external judge loop
+        env:
+          CODERUSHOJ_E2E_WEBHOOK_URL: ${{ secrets.PRODUCT_E2E_WEBHOOK_URL }}
+          CODERUSHOJ_E2E_WEBHOOK_ASSERT_URL: ${{ secrets.PRODUCT_E2E_WEBHOOK_ASSERT_URL }}
+          CODERUSHOJ_E2E_WEBHOOK_ASSERT_TOKEN: ${{ secrets.PRODUCT_E2E_WEBHOOK_ASSERT_TOKEN }}
         run: tests/e2e/product.sh
 
       - name: Run the real Chromium product journey

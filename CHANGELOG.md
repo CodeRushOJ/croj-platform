@@ -8,6 +8,26 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Features
+
+- 平台源码锁更新到已评审的 Frontend、Backend、Judging Server 与 Sandbox v1 发布候选提交。
+- 三节点产品门禁增加外部 manifest v2 OI `30/100` 部分分与沙箱内 special judge 闭环，并保留原 Backend → RocketMQ → Judging → Sandbox → callback → MySQL 主链。
+- 增加可选真实公网 HTTPS Webhook 验收：运维 CLI 注册 callback，异步 job 触发 outbox 投递，assertion API 返回原始 body/header 后由门禁重新计算 HMAC-SHA256。
+
+### Fixes
+
+- 补齐外部 Judge 启动所需的独立 `coderushoj_judge` DSN、版本化 source/callback key ring Secret 引用，以及主容器前带 advisory lock 的 schema migration init container。
+- 产品 E2E 现在比较 `sandbox-workers` DNS A 记录与 Ready EndpointSlice address，并核对 Judging 始终使用 `dns:///...` 且关闭 legacy discovery。
+
+### Security
+
+- Webhook E2E 不放宽公网 HTTPS、SSRF、DNS rebinding 或 redirect 防护；三项 receiver 配置不完整时失败关闭，未配置时不声称该门禁通过。
+- 一次性 callback secret、外部 API key、Judge DSN 与 AES key ring 只保存在 Git 忽略的 `0600` 文件或 Kubernetes Secret 引用中。
+
+### Operations
+
+- 部署与排障文档增加 Judge 专用 schema、migration init container、key rotation、Service DNS/EndpointSlice 对账及 Webhook receiver contract。
+
 ## [0.1.0] - 2026-07-24
 
 ### Features

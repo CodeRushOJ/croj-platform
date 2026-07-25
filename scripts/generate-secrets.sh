@@ -10,6 +10,8 @@ require_command openssl
 readonly target="${1:-coderushoj}"
 readonly secret_name="${CODERUSHOJ_SECRET_NAME:-coderushoj-local-secrets}"
 readonly secret_dir="$CODERUSHOJ_ROOT/.workspace/secrets"
+readonly EXTERNAL_SOURCE_KEY_VERSION=1
+readonly JUDGE_CALLBACK_KEY_VERSION=1
 
 if [[ "$target" != "--files-only" ]]; then
   require_command kubectl
@@ -63,6 +65,27 @@ write_random_base64_secret "$secret_dir/external-api-auth-pepper-base64" 32
 write_random_base64_secret "$secret_dir/external-idempotency-pepper-base64" 32
 write_random_base64_secret "$secret_dir/external-cursor-key-base64" 32
 write_random_base64_secret "$secret_dir/external-source-key-base64" 32
+write_random_base64_secret "$secret_dir/judge-callback-key-base64" 32
+
+mysql_username="$(tr -d '\r\n' <"$secret_dir/mysql-username")"
+mysql_password="$(tr -d '\r\n' <"$secret_dir/mysql-password")"
+[[ "$mysql_username" =~ ^[A-Za-z0-9_.-]+$ ]] \
+  || die "local MySQL username contains characters unsafe for the generated Judge DSN"
+[[ "$mysql_password" =~ ^[A-Za-z0-9]+$ ]] \
+  || die "local MySQL password contains characters unsafe for the generated Judge DSN"
+printf '%s:%s@tcp(coderushoj-infra-mysql:3306)/coderushoj_judge?parseTime=true&charset=utf8mb4' \
+  "$mysql_username" "$mysql_password" >"$secret_dir/judge-database-dsn"
+printf '{"%s":"%s"}' "$EXTERNAL_SOURCE_KEY_VERSION" \
+  "$(tr -d '\r\n' <"$secret_dir/external-source-key-base64")" \
+  >"$secret_dir/external-source-keys-json"
+printf '{"%s":"%s"}' "$JUDGE_CALLBACK_KEY_VERSION" \
+  "$(tr -d '\r\n' <"$secret_dir/judge-callback-key-base64")" \
+  >"$secret_dir/judge-callback-keys-json"
+chmod 600 \
+  "$secret_dir/judge-database-dsn" \
+  "$secret_dir/external-source-keys-json" \
+  "$secret_dir/judge-callback-keys-json"
+unset mysql_username mysql_password
 
 if [[ "$target" == "--files-only" ]]; then
   log "local secret files are ready in $secret_dir"
@@ -86,7 +109,9 @@ kubectl create secret generic "$secret_name" \
   --from-file=external-api-auth-pepper-base64="$secret_dir/external-api-auth-pepper-base64" \
   --from-file=external-idempotency-pepper-base64="$secret_dir/external-idempotency-pepper-base64" \
   --from-file=external-cursor-key-base64="$secret_dir/external-cursor-key-base64" \
-  --from-file=external-source-key-base64="$secret_dir/external-source-key-base64" \
+  --from-file=external-source-keys-json="$secret_dir/external-source-keys-json" \
+  --from-file=judge-callback-keys-json="$secret_dir/judge-callback-keys-json" \
+  --from-file=judge-database-dsn="$secret_dir/judge-database-dsn" \
   --dry-run=client \
   --output=yaml \
   | kubectl apply --filename - >/dev/null

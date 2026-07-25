@@ -327,6 +327,49 @@ class ProductE2EContractTest(unittest.TestCase):
         self.assertIn("ready_sandbox_endpoints", script)
         self.assertIn("sandbox_worker_nodes", script)
         self.assertIn("coderushoj.io/sandbox=true", script)
+        self.assertIn("sandbox_dns_addresses", script)
+        self.assertIn("getent ahostsv4 sandbox-workers", script)
+        self.assertIn("SANDBOX_GRPC_TARGET", script)
+        self.assertIn("SANDBOX_ALLOW_LEGACY_ENDPOINT_SLICE", script)
+        self.assertIn("dns:///sandbox-workers.coderushoj.svc.cluster.local:50051", script)
+
+    def test_external_flow_exercises_manifest_v2_oi_and_special_judge(self):
+        script = PRODUCT_E2E.read_text()
+        for fixture in ("bundle-oi", "bundle-spj"):
+            self.assertIn(fixture, script)
+            self.assertTrue((ROOT / "tests/e2e" / fixture).is_dir())
+        oi_manifest = json.loads(
+            (ROOT / "tests/e2e/bundle-oi/manifest.json").read_text()
+        )
+        spj_manifest = json.loads(
+            (ROOT / "tests/e2e/bundle-spj/manifest.template.json").read_text()
+        )
+        self.assertEqual(2, oi_manifest["schemaVersion"])
+        self.assertEqual("OI", oi_manifest["judgeMode"])
+        self.assertEqual(100, oi_manifest["totalScore"])
+        self.assertEqual("special", spj_manifest["checker"])
+        self.assertIn(".result.score == 30", script)
+        self.assertIn(".result.totalScore == 100", script)
+        self.assertIn("sourceSha256", script)
+        self.assertIn("special judge job", script)
+
+    def test_webhook_e2e_is_explicit_fail_closed_and_signature_checked(self):
+        script = PRODUCT_E2E.read_text()
+        deploy = DEPLOY.read_text()
+        workflow = WORKFLOW.read_text()
+        for token in (
+            "CODERUSHOJ_E2E_WEBHOOK_URL",
+            "CODERUSHOJ_E2E_WEBHOOK_ASSERT_URL",
+            "CODERUSHOJ_E2E_WEBHOOK_ASSERT_TOKEN",
+        ):
+            self.assertIn(token, script)
+            self.assertIn(token, workflow)
+        self.assertIn("/app/judge-admin callback create", deploy)
+        self.assertIn("callback-id", deploy)
+        self.assertIn("callback-secret", deploy)
+        self.assertIn("X-CodeRushOJ-Signature", script)
+        self.assertIn("X-CodeRushOJ-Event-Id", script)
+        self.assertIn("webhook signature", script)
 
     def test_external_tenant_is_provisioned_with_the_real_admin_binary(self):
         deploy = DEPLOY.read_text()

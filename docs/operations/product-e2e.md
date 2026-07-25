@@ -9,7 +9,11 @@
 
 集群安装 MySQL 8.4、Redis、RocketMQ、SeaweedFS S3、Mailpit、Gateway API、Envoy Gateway 和全部应用工作负载。应用 Chart 的 `adminBootstrap.enabled` 默认是 `false`。CI 临时启用它，让 Backend 正式镜像以 `CROJ_MODE=bootstrap-admin` 运行一次性 Job；用户名、邮箱和密码只从独立 Secret 引用。Job 成功后，Helm 立即移除 Job，Kubernetes Secret 也立即删除。长期 Backend Deployment 从不引用 bootstrap Secret。
 
-随后流水线在 Judging Pod 内执行镜像自带的 `/app/judge-admin`，创建隔离租户和最小 scope API key。一次性明文只写入权限为 `0600` 的 Git 忽略目录，不写日志或 artifact。
+参考 MySQL 启动后，部署脚本先创建独立 `coderushoj_judge` schema；Judging Pod
+中的 `migrate-external-judge-schema` init container 再运行镜像内置 migration，
+主容器只有校验成功才 Ready。随后流水线在 Judging Pod 内执行镜像自带的
+`/app/judge-admin`，创建隔离租户和最小 scope API key。一次性明文只写入权限为
+`0600` 的 Git 忽略目录，不写日志或 artifact。
 
 ## 真实验收流
 
@@ -21,10 +25,44 @@
 4. 提交正确 C++ 程序，轮询 Backend 提交详情直到 `ACCEPTED`，由真实 RocketMQ、Judging、TestBundle、headless sandbox Service 和内部回调完成闭环。
 5. 创建并公开全局公告、题目关联讨论、绑定题目版本的题解，以及编排了该不可变题目版本的公开比赛。
 6. 调用邮件验证码接口，并通过临时、受控的 Mailpit API port-forward 验证 SMTP 投递。port-forward 由脚本 EXIT trap 终止。
-7. 上传包含两个测试点的外部 TestBundle，调用异步 `POST /api/v1/judge-jobs` 并轮询终态；结果必须只有一个成功的 compile 状态和两个 `ACCEPTED` case。随后读取 `sandbox-workers` EndpointSlice，要求至少两个 ready endpoint 分布在两个带 sandbox 标签的 worker node，且 Service 必须保持 headless。
-8. 检查 Frontend、Backend、Docs、Judge 健康入口，再从未授权 Pod 探测 Backend 和 sandbox Service。Calico 必须阻断两个连接，Gateway 和 Judge 的合法业务流此前必须已成功。
+7. 上传包含两个测试点的外部 TestBundle，调用异步 `POST /api/v1/judge-jobs`
+   并轮询终态；结果必须只有一个成功的 compile 状态和两个 `ACCEPTED` case。
+8. 上传 manifest v2 OI bundle。选手程序只通过权重 30 的第一个 case，终态必须
+   是 `WRONG_ANSWER`、得分 `30/100`，两个 case 的 `score/maxScore` 分别为
+   `30/30` 与 `0/70`，证明异步 REST、MySQL 持久化与评分合同一致。
+9. 生成包含 checker SHA-256 的 manifest v2 special judge bundle。选手输出
+   `43`、标准输出为 `42`，只有受限 checker 明确接受后 job 才能 `ACCEPTED`；
+   checker 源码不会在 Judging 或 runner 上直接执行。
+10. 读取 `sandbox-workers` EndpointSlice，要求至少两个 ready endpoint 分布在
+    两个 sandbox worker；临时固定 digest 的 probe 执行
+    `getent ahostsv4 sandbox-workers`，DNS 地址集合必须与 Ready EndpointSlice
+    完全一致。Judging Deployment 必须使用 `dns:///...` 且关闭 legacy
+    EndpointSlice fallback。
+11. 检查 Frontend、Backend、Docs、Judge 健康入口，再从未授权 Pod 探测
+    Backend 和 sandbox Service。Calico 必须阻断两个连接，合法业务流此前必须成功。
 
-Webhook 不通过放宽 SSRF 或私网地址保护在此集群内回调。它继续由 Judging 仓库的注入 DNS/TLS MySQL integration gate 覆盖。
+## 真实 Webhook 门禁
+
+生产 SSRF 策略只接受公网可路由的 HTTPS receiver，测试不会为了方便放宽到
+cluster-local 或 loopback。仓库提供可重复的真实投递路径，CI Secret 同时配置：
+
+```text
+CODERUSHOJ_E2E_WEBHOOK_URL
+CODERUSHOJ_E2E_WEBHOOK_ASSERT_URL
+CODERUSHOJ_E2E_WEBHOOK_ASSERT_TOKEN
+```
+
+第一个地址接收 POST；第二个地址接受 assertion token，并按 `jobId` 返回最近一次
+捕获，JSON contract 为 `eventId`、`timestamp`、`signature`、`jobId` 和原始
+`bodyBase64`。部署脚本通过 `/app/judge-admin callback create` 创建 callback，
+仅把 callback ID/secret 写入 owned run 的 `0600` 目录。SPJ job 携带 callback
+ID 后，产品脚本轮询 assertion API，校验 body 的 event/job 身份，并按
+`X-CodeRushOJ-Event-Id`、`X-CodeRushOJ-Timestamp` 和
+`X-CodeRushOJ-Signature` 的 v1 framing 重新计算 HMAC-SHA256。
+
+三个值未配置时，普通 PR CI 明确不把公网 Webhook 计入已通过证据；三者只配置
+一部分时脚本失败关闭。协调发布的最终验收应在受控、短期公网 HTTPS receiver
+上配置全部三项并保留 Actions 结果，receiver 不得回显 secret 或保存隐藏题目内容。
 
 ## 真实浏览器验收
 

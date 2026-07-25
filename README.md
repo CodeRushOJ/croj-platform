@@ -21,7 +21,7 @@ make deploy
 make smoke
 ```
 
-当前平台底座的 MySQL、Redis、RocketMQ、SeaweedFS、Gateway API 和 Envoy Gateway 已在三节点 Kind 集群通过真实冒烟测试。本地 profile 还提供不出网的 Mailpit 邮件捕获器。应用 Chart 已覆盖前端、后端、文档、异步 REST 判题服务、两副本沙箱和默认关闭的一次性超级管理员 bootstrap Job；CI 另有自己命名、always 清理的三节点产品 E2E，覆盖真实登录、FPS/TestBundle、两条判题链路、社区、比赛、邮件和 Calico NetworkPolicy，并在同一集群上用固定版本 Playwright/Chromium 驱动真实浏览器关键路径。发布环境必须传入 CI 产出的镜像 digest。
+当前平台底座的 MySQL、Redis、RocketMQ、SeaweedFS、Gateway API 和 Envoy Gateway 已在三节点 Kind 集群通过真实冒烟测试。本地 profile 还提供不出网的 Mailpit 邮件捕获器。应用 Chart 已覆盖前端、后端、文档、异步 REST 判题服务、两副本沙箱和默认关闭的一次性超级管理员 bootstrap Job；CI 另有自己命名、always 清理的三节点产品 E2E，覆盖真实登录、FPS/TestBundle、RocketMQ 内部回调、外部异步 REST、manifest v2 OI 部分分、沙箱内 special judge、社区、比赛、邮件、Service DNS/EndpointSlice 与 Calico NetworkPolicy，并在同一集群上用固定版本 Playwright/Chromium 驱动真实浏览器关键路径。真实公网 Webhook 只有在三项 receiver Secret 完整配置并通过签名复算后才计入发布证据；未配置不会被伪报为通过。发布环境必须传入 CI 产出的镜像 digest。
 
 ## 不可变跨仓库构建
 
@@ -53,5 +53,9 @@ make source-verify
 make test-bundle-contract
 make smoke
 ```
+
+完整产品门禁及可选公网 HTTPS Webhook receiver contract 见
+[三节点产品 E2E](docs/operations/product-e2e.md)。本地静态验证不会声称 Kind、
+OI/SPJ 或 Webhook 已实际执行；以对应 GitHub Actions run 为准。
 
 本地密钥位于 `.workspace/secrets/`，不会写入 Git。失败诊断位于 `.workspace/diagnostics/latest/`，以受限权限保存资源状态和事件，默认不抓取应用日志或导出 Kubernetes Secret；共享前仍须按敏感运维数据审阅。

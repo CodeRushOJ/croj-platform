@@ -45,6 +45,19 @@ helm upgrade --install coderushoj-infra "$CODERUSHOJ_ROOT/charts/coderushoj-infr
   --wait-for-jobs \
   --timeout 15m
 
+log "creating the isolated external Judge database before application startup"
+# The quoted program is evaluated inside the MySQL container, where the
+# image-provided MYSQL_* environment exists.
+# shellcheck disable=SC2016
+kubectl exec --namespace "$namespace" statefulset/coderushoj-infra-mysql -- \
+  /bin/sh -ec '
+    case "$MYSQL_USER" in
+      *[!A-Za-z0-9_.-]*|"") exit 64 ;;
+    esac
+    MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --user=root --batch --skip-column-names \
+      --execute="CREATE DATABASE IF NOT EXISTS coderushoj_judge CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci; GRANT ALL PRIVILEGES ON coderushoj_judge.* TO '\''$MYSQL_USER'\''@'\''%'\'';"
+  '
+
 kubectl create secret generic "$bootstrap_secret" \
   --namespace "$namespace" \
   --from-file=username="$secret_root/admin-username" \
@@ -103,6 +116,32 @@ api_key="${api_key_output##*: }"
 [[ -n "$api_key" ]] || die "judge-admin returned an empty API key"
 printf '%s' "$api_key" >"$secret_root/external-api-key"
 chmod 600 "$secret_root/external-api-key"
+
+if [[ -n "${CODERUSHOJ_E2E_WEBHOOK_URL:-}" ]]; then
+  log "provisioning the external product E2E webhook through the real admin binary"
+  callback_output="$(
+    kubectl exec --namespace "$namespace" deployment/croj-judging-server -- \
+      /app/judge-admin callback create \
+      --tenant "$tenant_id" \
+      --url "$CODERUSHOJ_E2E_WEBHOOK_URL"
+  )"
+  callback_id="$(
+    printf '%s\n' "$callback_output" \
+      | sed -n 's/^Callback created: //p'
+  )"
+  callback_secret="$(
+    printf '%s\n' "$callback_output" \
+      | sed -n 's/^Callback secret (shown once): //p'
+  )"
+  [[ "$callback_id" =~ ^[a-z2-7]{26}$ ]] \
+    || die "judge-admin returned an invalid callback ID"
+  [[ "$callback_secret" == croj_whsec_* ]] \
+    || die "judge-admin returned an invalid callback secret"
+  printf '%s' "$callback_id" >"$secret_root/callback-id"
+  printf '%s' "$callback_secret" >"$secret_root/callback-secret"
+  chmod 600 "$secret_root/callback-id" "$secret_root/callback-secret"
+  unset callback_output callback_id callback_secret
+fi
 
 trap - ERR
 log "product E2E deployment and operator bootstrap are ready"

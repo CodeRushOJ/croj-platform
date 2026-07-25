@@ -42,6 +42,12 @@ IMAGES = {
 }
 DOCS_IMAGE = "ghcr.io/coderushoj/coderushoj-docs:dev"
 PLATFORM_REPOSITORY = "https://github.com/CodeRushOJ/croj-platform.git"
+RELEASE_CANDIDATES = {
+    "frontend": "326b61ad2e252e2d064f2f2736713e0fe0ca0299",
+    "backend": "193daaa6a3d7e4450067736065f63d6b93b5138b",
+    "judging-server": "c56bc7babbb2c3448f310855f58f3fb0b2ded5e1",
+    "sandbox": "e67104312a2fc9a9302fc3c416a2bc76e417e308",
+}
 
 
 def run(command, **kwargs):
@@ -96,6 +102,16 @@ class SourceLockContractTest(unittest.TestCase):
             self.assertNotIn("..", pathlib.PurePosixPath(context).parts)
             self.assertNotIn("..", pathlib.PurePosixPath(dockerfile).parts)
             self.assertEqual(IMAGES[component], image)
+
+    def test_canonical_lock_selects_the_reviewed_v1_release_candidates(self):
+        payload = json.loads(LOCK.read_text())
+        self.assertEqual(
+            RELEASE_CANDIDATES,
+            {
+                component: payload["sources"][component]["commit"]
+                for component in COMPONENTS
+            },
+        )
 
     def test_validator_rejects_mutable_ref_unknown_fields_and_duplicate_images(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

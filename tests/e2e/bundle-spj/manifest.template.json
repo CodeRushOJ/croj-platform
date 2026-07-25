@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 2,
+  "judgeMode": "ACM",
+  "checker": "special",
+  "limits": {
+    "timeLimitMillis": 1000,
+    "memoryLimitMiB": 256
+  },
+  "specialJudge": {
+    "language": "cpp",
+    "source": "checker/main.cpp",
+    "sourceSha256": "replaced-by-product-e2e",
+    "timeLimitMillis": 1000,
+    "memoryLimitMiB": 128
+  },
+  "cases": [
+    {"id": "spj-near", "input": "1.in", "output": "1.out", "weight": 1}
+  ]
+}

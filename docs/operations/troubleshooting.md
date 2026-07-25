@@ -26,9 +26,41 @@ docker pull kindest/node:v1.36.1
 kubectl logs -n coderushoj statefulset/coderushoj-infra-mysql --tail=200
 kubectl exec -n coderushoj statefulset/coderushoj-infra-mysql -- \
   /bin/sh -ec 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqladmin ping -uroot'
+kubectl get pod -n coderushoj -l app.kubernetes.io/component=judging-server \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.initContainerStatuses[?(@.name=="migrate-external-judge-schema")].state}{"\n"}{end}'
 ```
 
 首次初始化失败后不要直接删除 PVC；先确认是否有业务数据并完成备份。密钥文件不应包含换行，生成脚本会自动规范化。
+若 `migrate-external-judge-schema` 失败，先确认 `coderushoj_judge` 已存在、
+`judge-database-dsn` 引用的账号具有该 schema 的权限，再查看 init container 的
+单次日志；不要手工修改 migration history 或跳过 checksum 校验。
+
+## Sandbox Service DNS
+
+先并排检查 headless Service、Ready EndpointSlice 与实际 DNS：
+
+```bash
+kubectl get service sandbox-workers -n coderushoj -o jsonpath='{.spec.clusterIP}{"\n"}'
+kubectl get endpointslice -n coderushoj \
+  -l kubernetes.io/service-name=sandbox-workers -o wide
+source config/versions.env
+kubectl run sandbox-dns-debug -n coderushoj --restart=Never --rm -i \
+  --image="$E2E_NETWORK_PROBE_IMAGE" -- getent ahostsv4 sandbox-workers
+kubectl get deployment croj-judging-server -n coderushoj -o yaml \
+  | grep -E 'SANDBOX_GRPC_TARGET|SANDBOX_ALLOW_LEGACY_ENDPOINT_SLICE'
+```
+
+Service 必须显示 `None`，`getent ahostsv4` 的唯一地址必须覆盖全部 Ready
+EndpointSlice address。地址少时先查 Sandbox readiness 与 Pod 所在节点；地址正确
+但判题不可用时再查 gRPC 50051 NetworkPolicy 和 Judging 的 DNS FQDN，不能把
+`SANDBOX_ALLOW_LEGACY_ENDPOINT_SLICE` 改为 true 掩盖 DNS 故障。
+
+## 外部 Webhook
+
+Callback 创建失败时确认 URL 是公网 HTTPS、DNS 只解析到公网地址且 443 egress
+允许。投递未到时核对 assertion receiver 返回的是未经重编码的 `bodyBase64` 和
+原始 `X-CodeRushOJ-*` header；任何规范化都会使签名校验失败。不要把 callback
+改为 Pod/Service IP，也不要临时关闭 SSRF、DNS rebinding 或 redirect 防护。
 
 ## Redis
 

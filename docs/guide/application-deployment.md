@@ -42,14 +42,30 @@ smtp-password
 external-api-auth-pepper-base64
 external-idempotency-pepper-base64
 external-cursor-key-base64
-external-source-key-base64
+judge-database-dsn
+external-source-keys-json
+judge-callback-keys-json
 ```
 
-四个 `*-base64` key 必须各自解码为 32 字节。Backend 和 Judging 必须共享同一个 `judge-result-service-token`。检查 key 名时只读取元数据，不要执行会打印 Secret 值的命令。
+三个 `*-base64` pepper/key 必须各自解码为 32 字节。`external-source-keys-json`
+与 `judge-callback-keys-json` 都是版本号到 32-byte Base64 AES-256 key 的
+JSON object，例如只含 active version `1`；版本号由 Chart 中的
+`EXTERNAL_SOURCE_KEY_VERSION` 与 `JUDGE_CALLBACK_KEY_VERSION` 选择。轮换必须
+先把新旧版本同时写入 key ring，滚动发布新 active version，确认旧密文全部迁移
+后才能移除旧 key。`judge-database-dsn` 是 Judging 专用
+`coderushoj_judge` MySQL schema 的 Go driver DSN，必须作为一个 Secret 值提供。
+Backend 和 Judging 必须共享同一个 `judge-result-service-token`。检查 key 名时只读取
+元数据，不要执行会打印 Secret 值的命令。
 
 ## 服务发现与数据流
 
 Backend 通过 MySQL 保存权威业务数据，Redis 只承载可重建状态，RocketMQ 传递提交任务。隐藏 TestBundle 由 Backend 写入私有 S3 桶，Judging 从相同桶读取；对象存储凭据只来自 Secret。
+
+Backend 业务表与外部异步 Judge 的租户、job、idempotency、source metadata 和
+webhook outbox 使用同一 MySQL server 上的独立 schema。参考环境名为
+`coderushoj_judge`。应用 Deployment 的 `migrate-external-judge-schema` init
+container 在主进程启动前运行镜像内置、带 checksum 和 MySQL advisory lock 的
+migration；主进程随后只校验 schema，不会在 readiness 之后悄悄改表。
 
 Judging 的内部回调目标由 `BACKEND_INTERNAL_URL` 渲染为 `http://croj-backend:7999/api`。Sandbox 不再依赖 Kubernetes API 权限或手工 Endpoint 列表，`SANDBOX_GRPC_TARGET` 使用 `dns:///sandbox-workers.coderushoj.svc.cluster.local:50051`；gRPC 客户端通过 `round_robin` 使用 headless Service 的 Ready Endpoint。
 
@@ -72,6 +88,14 @@ scripts/generate-secrets.sh coderushoj
 helm upgrade --install coderushoj-infra charts/coderushoj-infra \
   --namespace coderushoj --create-namespace \
   --rollback-on-failure --wait --wait-for-jobs --timeout 15m
+
+# 只用于参考集群；生产由 DBA/托管数据库流程预先创建 schema 与最小权限账号。
+kubectl exec -n coderushoj statefulset/coderushoj-infra-mysql -- \
+  /bin/sh -ec '
+    case "$MYSQL_USER" in *[!A-Za-z0-9_.-]*|"") exit 64;; esac
+    MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot \
+      -e "CREATE DATABASE IF NOT EXISTS coderushoj_judge CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci; GRANT ALL PRIVILEGES ON coderushoj_judge.* TO '\''$MYSQL_USER'\''@'\''%'\'';"
+  '
 
 helm upgrade --install coderushoj charts/coderushoj \
   --namespace coderushoj \
@@ -139,6 +163,10 @@ helm upgrade --install coderushoj charts/coderushoj \
 ```
 
 生产发布前还必须确认 Gateway TLS Secret、真实 SMTP TLS 模式、备份、容量和支持 NetworkPolicy 的 CNI。
+生产 DBA 必须先建立 `coderushoj_judge`（或等价的独立 schema/实例）、授予
+`judge-database-dsn` 所代表账号仅该 schema 的 DDL/DML 权限，并先在预生产让
+`migrate-external-judge-schema` 完成。回滚旧镜像前核对它是否理解当前 migration
+版本；Helm 回滚不会反向执行数据库 migration。
 
 ## 一次性超级管理员
 

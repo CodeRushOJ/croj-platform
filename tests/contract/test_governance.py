@@ -139,7 +139,10 @@ class GovernanceContractTest(unittest.TestCase):
 
         changelog = self.read("CHANGELOG.md")
         unreleased = changelog.split("## [Unreleased]", 1)[1].split("## [0.1.0]", 1)[0]
-        self.assertEqual("", unreleased.strip())
+        for section in ("Features", "Fixes", "Security", "Operations"):
+            self.assertIn(f"### {section}", unreleased)
+        self.assertNotIn("TBD", unreleased)
+        self.assertNotIn("TODO", unreleased)
         self.assertIn("## [0.1.0] - 2026-07-24", changelog)
         release = changelog.split("## [0.1.0] - 2026-07-24", 1)[1].split("\n## [", 1)[0]
         for shipped_fact in (

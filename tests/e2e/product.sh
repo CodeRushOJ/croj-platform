@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # shellcheck source=scripts/lib.sh
 source "$ROOT_DIR/scripts/lib.sh"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/config/versions.env"
 
 require_command curl
 require_command jq
@@ -40,6 +42,28 @@ for secret_file in admin-username admin-email admin-password external-api-key; d
   [[ -s "$secret_root/$secret_file" ]] || die "missing product E2E secret file: $secret_file"
 done
 chmod 700 "$state_root" "$secret_root" "$run_dir"
+
+webhook_url="${CODERUSHOJ_E2E_WEBHOOK_URL:-}"
+webhook_assert_url="${CODERUSHOJ_E2E_WEBHOOK_ASSERT_URL:-}"
+webhook_assert_token="${CODERUSHOJ_E2E_WEBHOOK_ASSERT_TOKEN:-}"
+webhook_value_count=0
+for webhook_value in "$webhook_url" "$webhook_assert_url" "$webhook_assert_token"; do
+  [[ -n "$webhook_value" ]] && webhook_value_count=$((webhook_value_count + 1))
+done
+[[ "$webhook_value_count" == "0" || "$webhook_value_count" == "3" ]] \
+  || die "webhook E2E requires URL, assertion URL, and assertion token together"
+if [[ "$webhook_value_count" == "3" ]]; then
+  for secret_file in callback-id callback-secret; do
+    [[ -s "$secret_root/$secret_file" ]] \
+      || die "missing provisioned webhook secret file: $secret_file"
+  done
+  printf 'Authorization: Bearer %s\n' "$webhook_assert_token" \
+    >"$run_dir/webhook-assert.headers"
+  chmod 600 "$run_dir/webhook-assert.headers"
+else
+  log "public HTTPS webhook E2E is not configured; no webhook pass is claimed"
+fi
+unset webhook_assert_token webhook_value
 
 request_json() {
   local output="$1"
@@ -670,12 +694,211 @@ jq -e '
 ' "$run_dir/external-job.json" >/dev/null \
   || die "external job did not compile once and accept both sandbox cases"
 
+log "running a manifest v2 OI job and verifying a durable partial score"
+oi_bundle_zip="$run_dir/external-oi-bundle.zip"
+(
+  cd "$SCRIPT_DIR/bundle-oi"
+  python3 -m zipfile -c "$oi_bundle_zip" manifest.json 1.in 1.out 2.in 2.out
+)
+oi_bundle_status="$(
+  curl --silent --show-error \
+    --output "$run_dir/oi-bundle-created.json" \
+    --write-out "%{http_code}" \
+    --request POST \
+    --header "Host: $judge_host" \
+    --header "@$run_dir/external.headers" \
+    --header "Idempotency-Key: product-e2e-oi-bundle" \
+    --form "bundle=@$oi_bundle_zip;type=application/zip" \
+    "$gateway_url/api/v1/bundles"
+)"
+[[ "$oi_bundle_status" == "200" || "$oi_bundle_status" == "201" ]] \
+  || die "external OI bundle upload returned HTTP $oi_bundle_status"
+oi_bundle_id="$(jq -er '.bundleId' "$run_dir/oi-bundle-created.json")"
+jq -n --arg bundleId "$oi_bundle_id" \
+  --arg sourceCode '#include <iostream>
+int main(){int value; std::cin>>value; std::cout<<(value==1?1:0)<<"\n";}' \
+  '{bundleId:$bundleId,language:"cpp",sourceCode:$sourceCode,stopOnFailure:false,clientReference:"product-e2e-oi"}' \
+  >"$run_dir/oi-job-request.json"
+request_json "$run_dir/oi-job-created.json" "$judge_host" POST \
+  "/api/v1/judge-jobs" "$run_dir/external.headers" \
+  "$run_dir/oi-job-request.json" \
+  --header "Idempotency-Key: product-e2e-oi-job"
+oi_job_id="$(jq -er '.jobId' "$run_dir/oi-job-created.json")"
+oi_terminal="false"
+for _ in $(seq 1 150); do
+  request_json "$run_dir/oi-job.json" "$judge_host" GET \
+    "/api/v1/judge-jobs/${oi_job_id}" "$run_dir/external.headers" ""
+  if [[ "$(jq -er '.status' "$run_dir/oi-job.json")" =~ ^(SUCCEEDED|FAILED|CANCELLED)$ ]]; then
+    oi_terminal="true"
+    break
+  fi
+  sleep 2
+done
+[[ "$oi_terminal" == "true" ]] || die "external OI job never reached a terminal state"
+jq -e '
+  .status == "SUCCEEDED"
+  and .result.verdict == "WRONG_ANSWER"
+  and .result.score == 30
+  and .result.totalScore == 100
+  and [.result.cases[].score] == [30, 0]
+  and [.result.cases[].maxScore] == [30, 70]
+' "$run_dir/oi-job.json" >/dev/null \
+  || die "external OI job did not preserve its immutable partial score"
+
+log "running a sandboxed manifest v2 special judge job"
+spj_bundle_dir="$run_dir/bundle-spj"
+mkdir -p "$spj_bundle_dir/checker"
+cp "$SCRIPT_DIR/bundle-spj/1.in" "$spj_bundle_dir/1.in"
+cp "$SCRIPT_DIR/bundle-spj/1.out" "$spj_bundle_dir/1.out"
+cp "$SCRIPT_DIR/bundle-spj/checker/main.cpp" "$spj_bundle_dir/checker/main.cpp"
+spj_source_sha="$(
+  python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' \
+    "$spj_bundle_dir/checker/main.cpp"
+)"
+jq --arg sourceSha256 "$spj_source_sha" \
+  '.specialJudge.sourceSha256 = $sourceSha256' \
+  "$SCRIPT_DIR/bundle-spj/manifest.template.json" \
+  >"$spj_bundle_dir/manifest.json"
+spj_bundle_zip="$run_dir/external-spj-bundle.zip"
+(
+  cd "$spj_bundle_dir"
+  python3 -m zipfile -c "$spj_bundle_zip" \
+    manifest.json checker/main.cpp 1.in 1.out
+)
+spj_bundle_status="$(
+  curl --silent --show-error \
+    --output "$run_dir/spj-bundle-created.json" \
+    --write-out "%{http_code}" \
+    --request POST \
+    --header "Host: $judge_host" \
+    --header "@$run_dir/external.headers" \
+    --header "Idempotency-Key: product-e2e-spj-bundle" \
+    --form "bundle=@$spj_bundle_zip;type=application/zip" \
+    "$gateway_url/api/v1/bundles"
+)"
+[[ "$spj_bundle_status" == "200" || "$spj_bundle_status" == "201" ]] \
+  || die "external SPJ bundle upload returned HTTP $spj_bundle_status"
+spj_bundle_id="$(jq -er '.bundleId' "$run_dir/spj-bundle-created.json")"
+spj_callback_id=""
+[[ "$webhook_value_count" == "0" ]] \
+  || spj_callback_id="$(cat "$secret_root/callback-id")"
+jq -n --arg bundleId "$spj_bundle_id" \
+  --arg callbackId "$spj_callback_id" \
+  --arg sourceCode '#include <iostream>
+int main(){std::cout<<"43\n";}' \
+  '{
+    bundleId:$bundleId,
+    language:"cpp",
+    sourceCode:$sourceCode,
+    stopOnFailure:true,
+    clientReference:"product-e2e-spj"
+  } + if $callbackId == "" then {} else {callbackId:$callbackId} end' \
+  >"$run_dir/spj-job-request.json"
+request_json "$run_dir/spj-job-created.json" "$judge_host" POST \
+  "/api/v1/judge-jobs" "$run_dir/external.headers" \
+  "$run_dir/spj-job-request.json" \
+  --header "Idempotency-Key: product-e2e-spj-job"
+spj_job_id="$(jq -er '.jobId' "$run_dir/spj-job-created.json")"
+spj_terminal="false"
+for _ in $(seq 1 150); do
+  request_json "$run_dir/spj-job.json" "$judge_host" GET \
+    "/api/v1/judge-jobs/${spj_job_id}" "$run_dir/external.headers" ""
+  if [[ "$(jq -er '.status' "$run_dir/spj-job.json")" =~ ^(SUCCEEDED|FAILED|CANCELLED)$ ]]; then
+    spj_terminal="true"
+    break
+  fi
+  sleep 2
+done
+[[ "$spj_terminal" == "true" ]] || die "external special judge job never reached a terminal state"
+jq -e '
+  .status == "SUCCEEDED"
+  and .result.verdict == "ACCEPTED"
+  and .result.compileStatus == "SUCCEEDED"
+  and (.result.cases | length) == 1
+  and .result.cases[0].verdict == "ACCEPTED"
+' "$run_dir/spj-job.json" >/dev/null \
+  || die "external special judge job did not accept the checker-approved output"
+
+if [[ "$webhook_value_count" == "3" ]]; then
+  log "polling the external receiver and verifying the webhook signature"
+  webhook_received="false"
+  for _ in $(seq 1 60); do
+    webhook_status="$(
+      curl --silent --show-error \
+        --output "$run_dir/webhook-capture.json" \
+        --write-out "%{http_code}" \
+        --header "@$run_dir/webhook-assert.headers" \
+        "$webhook_assert_url?jobId=$spj_job_id"
+    )"
+    if [[ "$webhook_status" == "200" ]] && jq -e \
+      --arg jobId "$spj_job_id" '.jobId == $jobId' \
+      "$run_dir/webhook-capture.json" >/dev/null 2>&1; then
+      webhook_received="true"
+      break
+    fi
+    sleep 2
+  done
+  [[ "$webhook_received" == "true" ]] \
+    || die "signed webhook was not observable through the configured assertion API"
+  # Assertion API maps the received X-CodeRushOJ-Event-Id,
+  # X-CodeRushOJ-Timestamp, X-CodeRushOJ-Signature headers and raw body to
+  # eventId, timestamp, signature, and bodyBase64 without normalization.
+  python3 - "$run_dir/webhook-capture.json" "$secret_root/callback-secret" "$spj_job_id" <<'PY'
+import base64
+import hashlib
+import hmac
+import json
+import pathlib
+import sys
+
+capture = json.loads(pathlib.Path(sys.argv[1]).read_text())
+secret = pathlib.Path(sys.argv[2]).read_bytes()
+expected_job_id = sys.argv[3]
+event_id = capture["eventId"]
+timestamp = capture["timestamp"]
+signature = capture["signature"]
+body = base64.b64decode(capture["bodyBase64"], validate=True)
+event = json.loads(body)
+if event["eventId"] != event_id or event["jobId"] != expected_job_id:
+    raise SystemExit("webhook identity does not match its signed body")
+framing = f"v1\n{len(event_id.encode())}\n{event_id}\n{timestamp}\n".encode() + body
+expected = "v1=" + hmac.new(secret, framing, hashlib.sha256).hexdigest()
+if not hmac.compare_digest(signature, expected):
+    raise SystemExit("webhook signature verification failed")
+PY
+fi
+
 service_cluster_ip="$(
   kubectl get service sandbox-workers --namespace "$namespace" \
     --output=jsonpath='{.spec.clusterIP}'
 )"
 [[ "$service_cluster_ip" == "None" ]] \
   || die "sandbox-workers must remain a headless Service"
+
+judging_environment="$(
+  kubectl get deployment croj-judging-server --namespace "$namespace" \
+    --output=json
+)"
+jq -e '
+  [.spec.template.spec.containers[]
+    | select(.name == "judging-server")
+    | .env[]
+    | select(
+        .name == "SANDBOX_GRPC_TARGET"
+        and .value == "dns:///sandbox-workers.coderushoj.svc.cluster.local:50051"
+      )] | length == 1
+' <<<"$judging_environment" >/dev/null \
+  || die "judging deployment does not use the sandbox headless-Service DNS target"
+jq -e '
+  [.spec.template.spec.containers[]
+    | select(.name == "judging-server")
+    | .env[]
+    | select(
+        .name == "SANDBOX_ALLOW_LEGACY_ENDPOINT_SLICE"
+        and .value == "false"
+      )] | length == 1
+' <<<"$judging_environment" >/dev/null \
+  || die "judging deployment unexpectedly permits legacy EndpointSlice discovery"
 
 kubectl get endpointslices.discovery.k8s.io \
   --namespace "$namespace" \
@@ -699,6 +922,30 @@ sandbox_worker_nodes="$(
   || die "sandbox-workers EndpointSlices expose fewer than two ready endpoints"
 [[ "$sandbox_worker_nodes" == "2" ]] \
   || die "ready sandbox endpoints are not distributed across both worker nodes"
+sandbox_endpoint_addresses="$(
+  jq -r '
+    [.items[].endpoints[]
+      | select(.conditions.ready == true)
+      | .addresses[]]
+    | unique[]
+  ' "$run_dir/sandbox-endpointslices.json" | sort
+)"
+sandbox_dns_addresses="$(
+  # The awk expression is evaluated by the temporary in-cluster probe.
+  # shellcheck disable=SC2016
+  kubectl run product-e2e-sandbox-dns \
+    --namespace "$namespace" \
+    --restart=Never \
+    --attach \
+    --rm \
+    --quiet \
+    --image="$E2E_NETWORK_PROBE_IMAGE" \
+    --image-pull-policy=Never \
+    --command -- \
+    sh -ec 'getent ahostsv4 sandbox-workers | awk "{print \$1}" | sort -u'
+)"
+[[ "$sandbox_dns_addresses" == "$sandbox_endpoint_addresses" ]] \
+  || die "sandbox headless-Service DNS does not expose every ready EndpointSlice address"
 while IFS= read -r sandbox_node; do
   [[ "$(
     kubectl get node "$sandbox_node" \

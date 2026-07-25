@@ -201,6 +201,11 @@ class DocumentationContractTest(unittest.TestCase):
             "TestBundle",
             "adminBootstrap.enabled",
             "scripts/install-gateway.sh",
+            "judge-database-dsn",
+            "external-source-keys-json",
+            "judge-callback-keys-json",
+            "migrate-external-judge-schema",
+            "coderushoj_judge",
             "helm upgrade --install",
             "helm rollback",
         ):
@@ -228,8 +233,35 @@ class DocumentationContractTest(unittest.TestCase):
             "maxConcurrency",
             "EndpointSlice",
             "两个",
+            "getent ahostsv4 sandbox-workers",
+            "SANDBOX_ALLOW_LEGACY_ENDPOINT_SLICE",
         ):
-            self.assertIn(contract, deployment)
+                self.assertIn(contract, deployment)
+
+    def test_product_e2e_documents_v2_scoring_spj_and_optional_real_webhook(self):
+        operations = (DOCS / "operations/product-e2e.md").read_text()
+        troubleshooting = (DOCS / "operations/troubleshooting.md").read_text()
+        for contract in (
+            "manifest v2",
+            "OI",
+            "30/100",
+            "special judge",
+            "CODERUSHOJ_E2E_WEBHOOK_URL",
+            "CODERUSHOJ_E2E_WEBHOOK_ASSERT_URL",
+            "CODERUSHOJ_E2E_WEBHOOK_ASSERT_TOKEN",
+            "X-CodeRushOJ-Signature",
+            "bodyBase64",
+            "未配置",
+        ):
+            self.assertIn(contract, operations)
+        for contract in (
+            "migrate-external-judge-schema",
+            "coderushoj_judge",
+            "sandbox-workers",
+            "EndpointSlice",
+            "getent ahostsv4",
+        ):
+            self.assertIn(contract, troubleshooting)
 
     def test_source_lock_workflow_is_documented(self):
         readme = (ROOT / "README.md").read_text()

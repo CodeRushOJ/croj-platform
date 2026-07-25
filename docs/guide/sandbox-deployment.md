@@ -18,11 +18,19 @@ kubectl get endpointslice -n coderushoj \
   -l kubernetes.io/service-name=sandbox-workers -o wide
 kubectl get pods -n coderushoj \
   -l app.kubernetes.io/component=sandbox -o wide
+source config/versions.env
+kubectl run sandbox-dns-check -n coderushoj --restart=Never --rm -i \
+  --image="$E2E_NETWORK_PROBE_IMAGE" -- getent ahostsv4 sandbox-workers
 ```
 
 每个 Pod 通过 Downward API 获得唯一 `CROJ_SANDBOX_INSTANCE_ID`。Startup、readiness 和 liveness 都使用原生 gRPC probe；只有真正 Ready 的 endpoint 才会进入判题流量。
 
-产品 E2E 进一步要求至少两个 Ready EndpointSlice endpoint，且分布到两个带 `coderushoj.io/sandbox=true` 标签的 worker node。这是多副本调度和 Kubernetes 服务发现的运行证据，不是只检查 YAML。
+产品 E2E 进一步要求至少两个 Ready EndpointSlice endpoint，且分布到两个带
+`coderushoj.io/sandbox=true` 标签的 worker node；`getent ahostsv4 sandbox-workers`
+返回的唯一地址集合必须与所有 Ready EndpointSlice address 完全一致。它还读取
+Judging Deployment，要求 `SANDBOX_GRPC_TARGET` 固定为 namespace FQDN 且
+`SANDBOX_ALLOW_LEGACY_ENDPOINT_SLICE=false`。这些是多副本调度、Service DNS 和
+gRPC `round_robin` 前提的运行证据，不是只检查 YAML。
 
 ## 节点与权限边界
 

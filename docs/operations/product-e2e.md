@@ -5,7 +5,7 @@
 
 ## 门禁边界
 
-流水线从 `config/source-lock.json` 检出 frontend、backend、judging-server 和 sandbox 四个外部仓库的不可变提交，并从当前 workflow checkout 构建 Docs。五个镜像都带 OCI source/revision 标签：外部组件对应源码锁，Docs 对应当前 `GITHUB_SHA`。随后镜像被加载到一个控制平面和两个工作节点组成的 Kind 集群。产品 E2E 使用禁用 kindnet 的专用配置，并安装版本与清单 SHA-256 均固定的 Calico；因此后续的 NetworkPolicy 负向探测验证的是实际隔离，不是只检查 YAML。
+流水线从 `config/source-lock.json` 检出 frontend、backend、judging-server 和 sandbox 四个外部仓库的不可变提交，并从当前 workflow checkout 构建 Docs。五个镜像都带 OCI source/revision 标签：外部组件对应源码锁，Docs 对应当前 `GITHUB_SHA`。随后镜像被加载到一个控制平面和两个工作节点组成的 Kind 集群。产品 E2E 使用禁用 kindnet 的专用配置，并安装版本与清单 SHA-256 均固定的 Calico；因此后续的 NetworkPolicy 负向探测验证的是实际隔离，不是只检查 YAML。Service DNS 对账使用独立短生命周期 Pod，等待其成功终态后读取 `getent` 日志再删除，避免 attach 竞态丢失输出。
 
 集群安装 MySQL 8.4、Redis、RocketMQ、SeaweedFS S3、Mailpit、Gateway API、Envoy Gateway 和全部应用工作负载。应用 Chart 的 `adminBootstrap.enabled` 默认是 `false`。CI 临时启用它，让 Backend 正式镜像以 `CROJ_MODE=bootstrap-admin` 运行一次性 Job；用户名、邮箱和密码只从独立 Secret 引用。Job 成功后，Helm 立即移除 Job，Kubernetes Secret 也立即删除。长期 Backend Deployment 从不引用 bootstrap Secret。
 

@@ -46,6 +46,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - 外部异步 REST 门禁的 ACM job 幂等键满足 Judge 的 `16–128` 可见 ASCII 合同，并由回归测试统一扫描所有 E2E 幂等键。
 - 平台发布不再假设所有组件与平台共用同一 tag；source lock v2 同时锁定组件 commit 与正式 release tag，下载和校验 Frontend `v1.0.1`、Backend/Judge/Sandbox `v1.0.2` 的真实镜像清单。
 - Backend 与一次性管理员 bootstrap 的 JDBC 会话统一使用 UTC，避免 MySQL `CURRENT_TIMESTAMP` 与 Java `Instant` 相差八小时后把比赛提交排除在排行榜统计窗口之外。
+- Sandbox headless Service DNS 探针改为显式创建 Pod、等待成功终态、读取日志后删除，避免短任务在 `kubectl --attach --rm` 建立连接前已经退出而丢失真实 DNS 结果。
 - 平台与四个组件的 release job 补齐 GitHub `attestations: write` 最小权限，避免镜像已推送但 OIDC provenance 因 API `403` 无法持久化。
 - 修复 Calico 默认拒绝出站时 Mailpit 无法向 Backend 返回 SMTP greeting、邮件接口最终被 Envoy 504 的问题；仅限本地的 Mailpit 现在只可向可配置的精确 Kind node/Pod CIDR 回包，真实 E2E 在业务请求前验证完整 SMTP `220` 协议握手。
 - Backend SMTP 连接、读取与写入增加 3s/5s/5s 默认超时和 Helm 覆盖项，裸机与容器部署同样在启动时校验 `100–60000ms` 整数范围；传输失败会在应用层有界返回，不再依赖网关超时终止请求。

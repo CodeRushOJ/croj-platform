@@ -23,12 +23,15 @@ readonly docs_host="docs.coderushoj.local"
 readonly gateway_url="${CODERUSHOJ_E2E_GATEWAY_URL:-http://127.0.0.1:8080}"
 readonly network_probe_image="${CODERUSHOJ_E2E_NETWORK_PROBE_IMAGE:-$E2E_NETWORK_PROBE_IMAGE}"
 readonly smtp_probe_pod="coderushoj-smtp-protocol-probe"
+readonly sandbox_dns_probe_pod="product-e2e-sandbox-dns"
 run_dir="$(mktemp -d "$state_root/run.XXXXXX")"
 readonly run_dir
 port_forward_pid=""
 
 cleanup() {
   kubectl delete pod "$smtp_probe_pod" \
+    --namespace "$namespace" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+  kubectl delete pod "$sandbox_dns_probe_pod" \
     --namespace "$namespace" --ignore-not-found --wait=false >/dev/null 2>&1 || true
   if [[ -n "$port_forward_pid" ]] && kill -0 "$port_forward_pid" 2>/dev/null; then
     kill "$port_forward_pid" 2>/dev/null || true
@@ -1177,20 +1180,46 @@ sandbox_endpoint_addresses="$(
     | unique[]
   ' "$run_dir/sandbox-endpointslices.json" | sort
 )"
+kubectl delete pod "$sandbox_dns_probe_pod" \
+  --namespace "$namespace" --ignore-not-found --wait=true >/dev/null
+# The awk expression is evaluated by the temporary in-cluster probe.
+# shellcheck disable=SC2016
+kubectl run "$sandbox_dns_probe_pod" \
+  --namespace "$namespace" \
+  --restart=Never \
+  --quiet \
+  --image="$network_probe_image" \
+  --image-pull-policy=IfNotPresent \
+  --command -- \
+  sh -ec 'getent ahostsv4 sandbox-workers | awk "{print \$1}" | sort -u' \
+  >/dev/null
+sandbox_dns_probe_succeeded="false"
+for _ in $(seq 1 60); do
+  sandbox_dns_probe_phase="$(
+    kubectl get pod "$sandbox_dns_probe_pod" \
+      --namespace "$namespace" \
+      --output=jsonpath='{.status.phase}' 2>/dev/null || true
+  )"
+  case "$sandbox_dns_probe_phase" in
+    Succeeded)
+      sandbox_dns_probe_succeeded="true"
+      break
+      ;;
+    Failed)
+      break
+      ;;
+  esac
+  sleep 1
+done
+if [[ "$sandbox_dns_probe_succeeded" != "true" ]]; then
+  kubectl logs "$sandbox_dns_probe_pod" --namespace "$namespace" >&2 || true
+  die "sandbox headless-Service DNS probe did not succeed"
+fi
 sandbox_dns_addresses="$(
-  # The awk expression is evaluated by the temporary in-cluster probe.
-  # shellcheck disable=SC2016
-  kubectl run product-e2e-sandbox-dns \
-    --namespace "$namespace" \
-    --restart=Never \
-    --attach \
-    --rm \
-    --quiet \
-    --image="$network_probe_image" \
-    --image-pull-policy=IfNotPresent \
-    --command -- \
-    sh -ec 'getent ahostsv4 sandbox-workers | awk "{print \$1}" | sort -u'
+  kubectl logs "$sandbox_dns_probe_pod" --namespace "$namespace" | sort -u
 )"
+kubectl delete pod "$sandbox_dns_probe_pod" \
+  --namespace "$namespace" --wait=true >/dev/null
 [[ "$sandbox_dns_addresses" == "$sandbox_endpoint_addresses" ]] \
   || die "sandbox headless-Service DNS does not expose every ready EndpointSlice address"
 while IFS= read -r sandbox_node; do

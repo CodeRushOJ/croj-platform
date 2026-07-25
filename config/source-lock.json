@@ -10,14 +10,14 @@
     },
     "backend": {
       "repository": "https://github.com/CodeRushOJ/croj-backend.git",
-      "commit": "ffbd9584b7f5e5c5fb304b5027d140dd37a2cce9",
+      "commit": "a200fa9e9f6416a647c830bb436239b70ba41313",
       "context": ".",
       "dockerfile": "Dockerfile",
       "image": "ghcr.io/coderushoj/croj-backend:dev"
     },
     "judging-server": {
       "repository": "https://github.com/CodeRushOJ/croj-judging-server.git",
-      "commit": "c38a509754971c5078aa15296f7126f6777daba3",
+      "commit": "50b2ee3fbf7f0b22a1170518a1705e4bbabe8f85",
       "context": ".",
       "dockerfile": "Dockerfile",
       "image": "ghcr.io/coderushoj/croj-judging-server:dev"

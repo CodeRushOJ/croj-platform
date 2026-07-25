@@ -343,6 +343,8 @@ class ProductE2EContractTest(unittest.TestCase):
         self.assertIn("/api/submission", spec)
         self.assertIn("getByRole", spec)
         self.assertIn("getByLabel", spec)
+        self.assertIn("await editor.focus();", spec)
+        self.assertNotIn("await editor.click();", spec)
         self.assertNotIn("page.route(", spec)
         self.assertNotIn("route.fulfill(", spec)
         self.assertNotIn("setTimeout(", spec)

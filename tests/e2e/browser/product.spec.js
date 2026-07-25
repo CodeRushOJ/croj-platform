@@ -135,7 +135,7 @@ test("administrator completes the real browser product journey", async ({
   await page.getByRole("tab", { name: "提交代码", exact: true }).click();
   const editor = page.getByRole("textbox", { name: /Editor content/i });
   await expect(editor).toBeVisible();
-  await editor.click();
+  await editor.focus();
   await editor.press(process.platform === "darwin" ? "Meta+A" : "Control+A");
   await page.keyboard.insertText(`#include <iostream>
 int main() {

@@ -47,7 +47,10 @@ external-source-keys-json
 judge-callback-keys-json
 ```
 
-三个 `*-base64` pepper/key 必须各自解码为 32 字节。`external-source-keys-json`
+三个 `*-base64` pepper/key 必须各自解码为 32 字节。Judging runtime 的
+`EXTERNAL_API_AUTH_PEPPER_BASE64` 与同一容器内 `judge-admin api-key` 使用的
+`JUDGE_API_KEY_PEPPER_B64` 都由 `external-api-auth-pepper-base64` 注入；两者必须
+保持同源，才能让 CLI 创建的租户 API key 被运行时验证。`external-source-keys-json`
 与 `judge-callback-keys-json` 都是版本号到 32-byte Base64 AES-256 key 的
 JSON object，例如只含 active version `1`；版本号由 Chart 中的
 `EXTERNAL_SOURCE_KEY_VERSION` 与 `JUDGE_CALLBACK_KEY_VERSION` 选择。轮换必须

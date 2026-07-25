@@ -284,6 +284,8 @@ spec:
               value: {{ .Values.judgingServer.externalAPI.workerConcurrency | quote }}
             - name: EXTERNAL_API_AUTH_PEPPER_BASE64
               valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: external-api-auth-pepper-base64}}
+            - name: JUDGE_API_KEY_PEPPER_B64
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: external-api-auth-pepper-base64}}
             - name: EXTERNAL_IDEMPOTENCY_PEPPER_BASE64
               valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: external-idempotency-pepper-base64}}
             - name: EXTERNAL_CURSOR_KEY_BASE64

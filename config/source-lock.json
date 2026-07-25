@@ -3,7 +3,7 @@
   "sources": {
     "frontend": {
       "repository": "https://github.com/CodeRushOJ/croj-frontend.git",
-      "commit": "ecc08c7ed1aaab4a0e57d6b88ad0271555fc3dfa",
+      "commit": "3d969de520c00d67d986a9fb2835515f505633ee",
       "context": ".",
       "dockerfile": "Dockerfile",
       "image": "ghcr.io/coderushoj/croj-frontend:dev"

@@ -108,6 +108,22 @@ class ApplicationRenderTest(unittest.TestCase):
         private_render = self.render()
         self.assertNotIn("name: coderushoj-judge-api", private_render)
 
+    def test_runtime_and_judge_admin_share_one_api_key_pepper_secret(self):
+        rendered = self.render()
+        secret_reference = (
+            "valueFrom: {secretKeyRef: {name: coderushoj-local-secrets, "
+            "key: external-api-auth-pepper-base64}}"
+        )
+        for environment_name in (
+            "EXTERNAL_API_AUTH_PEPPER_BASE64",
+            "JUDGE_API_KEY_PEPPER_B64",
+        ):
+            self.assertIn(
+                f"name: {environment_name}\n              {secret_reference}",
+                rendered,
+            )
+        self.assertEqual(2, rendered.count(secret_reference))
+
     def test_external_judge_schema_migrates_before_the_runtime_starts(self):
         rendered = self.render()
         self.assertIn("initContainers:", rendered)

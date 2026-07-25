@@ -65,7 +65,29 @@ class GatewayRenderTest(unittest.TestCase):
         self.assertIn("kind: EnvoyProxy", rendered)
         self.assertIn("type: NodePort", rendered)
         self.assertIn("nodePort: 30080", rendered)
+        self.assertIn("externalTrafficPolicy: Cluster", rendered)
         self.assertIn("parametersRef:", rendered)
+
+    def test_gateway_rejects_an_invalid_external_traffic_policy(self):
+        result = subprocess.run(
+            [
+                "helm",
+                "template",
+                "coderushoj",
+                str(CHART),
+                "--namespace",
+                "coderushoj",
+                "--set",
+                "gateway.envoyProxy.enabled=true",
+                "--set",
+                "gateway.envoyProxy.externalTrafficPolicy=Invalid",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("externalTrafficPolicy", result.stderr)
 
 
 if __name__ == "__main__":

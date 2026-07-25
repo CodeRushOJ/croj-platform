@@ -12,6 +12,7 @@ gateway:
   envoyProxy:
     enabled: false
     nodePort: 30080
+    externalTrafficPolicy: Local
 
 deploymentProfile: development
 

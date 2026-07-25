@@ -2,6 +2,9 @@ gateway:
   envoyProxy:
     enabled: true
     nodePort: 30080
+    # Kind maps host port 8080 only to the control-plane NodePort. Cluster
+    # policy forwards it to the Envoy pod even when that pod is on a worker.
+    externalTrafficPolicy: Cluster
 
 judgingServer:
   externalAPI:

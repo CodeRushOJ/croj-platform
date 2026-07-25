@@ -30,7 +30,7 @@
     },
     "gateway": {
       "type": "object",
-      "required": ["className", "host", "docsHost", "judgeHost", "tls"],
+      "required": ["className", "host", "docsHost", "judgeHost", "tls", "envoyProxy"],
       "properties": {
         "className": {"type": "string", "minLength": 1},
         "host": {"$ref": "#/definitions/hostname"},
@@ -42,6 +42,18 @@
           "properties": {
             "enabled": {"type": "boolean"},
             "secretName": {"type": "string"}
+          }
+        },
+        "envoyProxy": {
+          "type": "object",
+          "required": ["enabled", "nodePort", "externalTrafficPolicy"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "nodePort": {"type": "integer", "minimum": 30000, "maximum": 32767},
+            "externalTrafficPolicy": {
+              "type": "string",
+              "enum": ["Local", "Cluster"]
+            }
           }
         }
       }

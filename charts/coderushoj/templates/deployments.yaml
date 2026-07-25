@@ -90,7 +90,7 @@ spec:
             - {name: http, containerPort: 7999, protocol: TCP}
           env:
             - name: DATABASE_URL
-              value: {{ printf "jdbc:mysql://%s:%v/%s?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&useSSL=false" .Values.dependencies.mysql.host .Values.dependencies.mysql.port .Values.dependencies.mysql.database | quote }}
+              value: {{ printf "jdbc:mysql://%s:%v/%s?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&forceConnectionTimeZoneToSession=true&useSSL=false" .Values.dependencies.mysql.host .Values.dependencies.mysql.port .Values.dependencies.mysql.database | quote }}
             - name: DATABASE_USERNAME
               valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: mysql-username}}
             - name: DATABASE_PASSWORD

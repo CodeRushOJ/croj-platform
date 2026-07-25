@@ -239,7 +239,19 @@ class ApplicationRenderTest(unittest.TestCase):
             "adminBootstrap.secretName=coderushoj-e2e-admin-bootstrap",
         )
         self.assertEqual(2, rendered.count("serverTimezone=UTC"))
+        self.assertEqual(
+            2,
+            rendered.count("forceConnectionTimeZoneToSession=true"),
+        )
         self.assertNotIn("serverTimezone=Asia/Shanghai", rendered)
+
+    def test_local_backend_allows_the_real_kind_browser_origin(self):
+        rendered = self.render()
+        self.assertIn(
+            'name: CORS_ALLOWED_ORIGINS\n'
+            '              value: "http://coderushoj.local:8080"',
+            rendered,
+        )
 
     def test_admin_bootstrap_has_only_dns_and_mysql_network_access(self):
         rendered = self.render(

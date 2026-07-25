@@ -100,7 +100,7 @@ frontend:
 
 backend:
   replicas: 1
-  corsAllowedOrigins: http://coderushoj.local
+  corsAllowedOrigins: http://coderushoj.local:8080
   uploads:
     storage: 5Gi
     storageClassName: ""

@@ -20,7 +20,11 @@ helm template coderushoj charts/coderushoj \
 
 应用依赖 MySQL、Redis、RocketMQ、S3 兼容对象存储和 SMTP。参考集群通过 infra Chart 提供 MySQL、Redis、RocketMQ、SeaweedFS 和 Mailpit。生产环境可以使用托管服务，但 `dependencies.*` 地址、端口、桶和 region 必须与实际环境一致。
 
-Backend 和管理员 bootstrap 的 JDBC 会话固定为 UTC。生产 MySQL 也应保持 UTC；不要只修改 JDBC `serverTimezone` 为本地时区，因为比赛时间由 Java `Instant` 写入，而提交的 `create_time` 可由 MySQL `CURRENT_TIMESTAMP` 生成，时区不一致会让排行榜窗口错误排除有效提交。
+Backend 和管理员 bootstrap 的 JDBC 连接同时设置
+`serverTimezone=UTC&forceConnectionTimeZoneToSession=true`，把 Connector/J 的解释时区和
+MySQL 会话时区都固定为 UTC。生产 MySQL 也应保持 UTC；不要只修改
+`serverTimezone` 为本地时区，因为比赛时间由 Java `Instant` 写入，而提交的
+`create_time` 可由 MySQL `CURRENT_TIMESTAMP` 生成，时区不一致会让排行榜窗口错误排除有效提交。
 
 ## Secret 合同
 

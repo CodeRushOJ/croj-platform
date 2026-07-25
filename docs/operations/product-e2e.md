@@ -85,7 +85,8 @@ ID 后，产品脚本轮询 assertion API，校验 body 的 event/job 身份，�
 
 API 流完成数据准备后，`scripts/run-browser-product-e2e.sh` 在同一个 owned
 cluster 上启动固定版本 Playwright/Chromium。Chromium 通过 host resolver 将
-`coderushoj.local` 指向 runner 回环地址，所有页面、静态资源和 `/api` 请求仍经过
+`coderushoj.local` 指向 runner 回环地址，浏览器入口和本地 CORS allowlist 均为
+`http://coderushoj.local:8080`；所有页面、静态资源和 `/api` 请求仍经过
 实际 Envoy Gateway、Frontend 和 Backend；测试不启动 `webServer`，也不拦截或
 伪造网络响应。
 

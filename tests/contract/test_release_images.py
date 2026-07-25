@@ -27,7 +27,7 @@ class ReleaseImageManifestTest(unittest.TestCase):
         }
         self.release_tags = {
             "frontend": "v1.0.1",
-            "backend": "v1.0.2",
+            "backend": "v1.0.3",
             "judging-server": "v1.0.2",
             "sandbox": "v1.0.2",
         }
@@ -101,7 +101,7 @@ class ReleaseImageManifestTest(unittest.TestCase):
         self.assertEqual("1.0.0", payload["version"])
         self.assertEqual(self.revisions["backend"], payload["images"]["backend"]["revision"])
         self.assertEqual("v1.0.1", payload["images"]["frontend"]["tag"])
-        self.assertEqual("v1.0.2", payload["images"]["backend"]["tag"])
+        self.assertEqual("v1.0.3", payload["images"]["backend"]["tag"])
         self.assertEqual(
             ["linux/amd64", "linux/arm64"],
             payload["images"]["sandbox"]["platforms"],

@@ -135,16 +135,16 @@ test("administrator completes the real browser product journey", async ({
   await page.getByRole("tab", { name: "提交代码", exact: true }).click();
   const editor = page.getByRole("textbox", { name: /Editor content/i });
   await expect(editor).toBeVisible();
-  await editor.focus();
-  await editor.press(process.platform === "darwin" ? "Meta+A" : "Control+A");
-  await page.keyboard.insertText(`#include <iostream>
+  const sourceCode = `#include <iostream>
 int main() {
   long long a, b;
   while (std::cin >> a >> b) {
     std::cout << a + b;
     if (a != 500 || b != 17) std::cout << "\\n";
   }
-}`);
+}`;
+  await editor.fill(sourceCode);
+  await expect(editor).toHaveValue(sourceCode);
   const submissionResponsePromise = page.waitForResponse(
     (response) => responsePathIs(response, "/api/submission", "POST"),
   );

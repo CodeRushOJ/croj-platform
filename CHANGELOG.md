@@ -24,6 +24,41 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - 后续部署、监控与回滚变化将记录在本节。
 
+## [1.0.2] - 2026-07-25
+
+### Features
+
+- 保持 `1.0.1` 已验收的完整 OJ 运行时、Kubernetes 架构与不可变组件锁，不引入业务行为或数据模型变化。
+
+### Fixes
+
+- Release job 在执行 `make validate` 前显式运行 `corepack enable` 并按 lockfile 安装文档依赖，确保文档链接契约调用固定版本 `pnpm` 和 VitePress 时工具链已存在；修复 `v1.0.1` 在全部版本、标签、main 与真实产品 E2E 预检通过后，因 `FileNotFoundError: pnpm` 停在静态门禁的问题。
+- 新增发布工作流顺序契约，强制 package-manager provisioning 与锁定依赖安装都发生在完整静态发布门禁之前。
+
+### Security
+
+- pnpm 继续由仓库 `packageManager` 与 lockfile 固定版本，Release 不依赖 runner 上未声明的全局包管理器。
+
+### Migrations
+
+- 无数据库、对象存储、消息队列或 Judge schema 迁移。
+
+### Operations
+
+- 保留失败的 annotated `v1.0.0` 与 `v1.0.1` 标签，不移动或删除公开历史；两者均未创建 GitHub Release 或可部署制品。正式制品发布从 `v1.0.2` 开始。
+
+### Known Limitations
+
+- Chart 内有状态依赖仍面向本机、测试和参考部署；高可用生产应使用托管 MySQL、Redis、RocketMQ 与 S3 兼容对象存储。
+
+### Upgrade
+
+- 候选环境无需数据迁移；使用 `v1.0.2` Release 的 digest-only `production-images.yaml` 与 Chart 包执行 `helm upgrade --install --atomic`。
+
+### Rollback
+
+- `v1.0.0` 与 `v1.0.1` 未产生可部署制品，不能作为制品回滚目标；运行时回滚应使用先前成功 Helm revision，`v1.0.2` 可按固定 digest 重建。
+
 ## [1.0.1] - 2026-07-25
 
 ### Features
@@ -251,8 +286,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - 判题服务仍包含模拟结果路径，沙箱隔离实现与 README 描述之间存在差距。
 - 缺少系统化的前后端测试、真实隐藏测试数据、CI、升级回滚与运维文档。
 
-[Unreleased]: https://github.com/CodeRushOJ/croj-platform/compare/v1.0.1...HEAD
-[1.0.1]: https://github.com/CodeRushOJ/croj-platform/releases/tag/v1.0.1
+[Unreleased]: https://github.com/CodeRushOJ/croj-platform/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/CodeRushOJ/croj-platform/releases/tag/v1.0.2
+[1.0.1]: https://github.com/CodeRushOJ/croj-platform/tree/v1.0.1
 [1.0.0]: https://github.com/CodeRushOJ/croj-platform/tree/v1.0.0
 [0.1.0]: https://github.com/CodeRushOJ/croj-platform/releases/tag/v0.1.0
 [0.0.1]: https://github.com/orgs/CodeRushOJ/repositories

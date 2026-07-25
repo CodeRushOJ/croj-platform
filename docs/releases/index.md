@@ -2,7 +2,7 @@
 
 平台使用 SemVer；每次协调发版会固定前端、后端、判题服务、沙箱、文档和 Helm Chart 的版本或镜像 digest。
 
-完整变更记录位于仓库根目录的 [`CHANGELOG.md`](https://github.com/CodeRushOJ/croj-platform/blob/main/CHANGELOG.md)。其中 `0.0.1` 是根据原仓库 Git 历史重建的 2025 原型里程碑，不冒充当时存在的统一标签；`0.1.0` 是平台底座版本，`1.0.0` 是完整 OJ 的首次协调标签，`1.0.1` 是修复发布链路后的当前正式版本。
+完整变更记录位于仓库根目录的 [`CHANGELOG.md`](https://github.com/CodeRushOJ/croj-platform/blob/main/CHANGELOG.md)。其中 `0.0.1` 是根据原仓库 Git 历史重建的 2025 原型里程碑，不冒充当时存在的统一标签；`0.1.0` 是平台底座版本，`1.0.0` 和 `1.0.1` 保留为发布链路失败的审计标签，`1.0.2` 是当前正式版本。
 
 ## 发布说明必填项
 

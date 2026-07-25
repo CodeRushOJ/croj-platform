@@ -40,6 +40,13 @@ jobs:
         with:
           node-version: '24.15.0'
 
+      - name: Enable the pinned pnpm package manager
+        run: corepack enable
+
+      - name: Install locked documentation dependencies
+        working-directory: docs
+        run: pnpm install --frozen-lockfile
+
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.0.0
         with:
@@ -92,11 +99,8 @@ jobs:
         run: make validate
 
       - name: Build documentation
-        run: |
-          corepack enable
-          cd docs
-          pnpm install --frozen-lockfile
-          pnpm build
+        working-directory: docs
+        run: pnpm build
 
       - name: Package Helm charts and release notes
         shell: bash

@@ -108,6 +108,21 @@ class GovernanceContractTest(unittest.TestCase):
         self.assertIn("tags:", workflow)
         self.assertIn("'v*'", workflow)
         self.assertIn("VERSION", workflow)
+        corepack_position = workflow.index("corepack enable")
+        dependency_install_position = workflow.index("pnpm install --frozen-lockfile")
+        static_gate_position = workflow.index(
+            "- name: Run the complete static release gate"
+        )
+        self.assertLess(
+            corepack_position,
+            static_gate_position,
+            "pnpm must be provisioned before make validate invokes the docs build",
+        )
+        self.assertLess(
+            dependency_install_position,
+            static_gate_position,
+            "locked docs dependencies must exist before make validate invokes pnpm build",
+        )
         self.assertIn("CHANGELOG.md", workflow)
         self.assertIn("helm package", workflow)
         self.assertIn("docker/build-push-action", workflow)
@@ -150,7 +165,7 @@ class GovernanceContractTest(unittest.TestCase):
 
     def test_v1_release_version_and_notes_match_shipped_platform(self):
         version = (ROOT / "VERSION").read_text().strip()
-        self.assertEqual("1.0.1", version)
+        self.assertEqual("1.0.2", version)
         for chart in ("charts/coderushoj/Chart.yaml", "charts/coderushoj-infra/Chart.yaml"):
             manifest = self.read(chart)
             self.assertIn(f"version: {version}", manifest)
@@ -178,7 +193,7 @@ class GovernanceContractTest(unittest.TestCase):
             "Rollback",
         ):
             self.assertIn(f"### {section}", release)
-        self.assertIn("actions/setup-python", release)
+        self.assertIn("corepack enable", release)
         self.assertIn(
             f"[Unreleased]: https://github.com/CodeRushOJ/croj-platform/compare/v{version}...HEAD",
             changelog,
@@ -191,6 +206,14 @@ class GovernanceContractTest(unittest.TestCase):
             "[1.0.0]: https://github.com/CodeRushOJ/croj-platform/tree/v1.0.0",
             changelog,
         )
+        self.assertIn(
+            "[1.0.1]: https://github.com/CodeRushOJ/croj-platform/tree/v1.0.1",
+            changelog,
+        )
+        prior_patch = changelog.split("## [1.0.1] - 2026-07-25", 1)[1].split(
+            "\n## [", 1
+        )[0]
+        self.assertIn("actions/setup-python", prior_patch)
         prior_release = changelog.split("## [1.0.0] - 2026-07-25", 1)[1].split(
             "\n## [", 1
         )[0]

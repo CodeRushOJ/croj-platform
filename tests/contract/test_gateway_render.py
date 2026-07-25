@@ -89,6 +89,29 @@ class GatewayRenderTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("externalTrafficPolicy", result.stderr)
 
+    def test_external_judge_route_exposes_versioned_api_and_health_only(self):
+        result = subprocess.run(
+            [
+                "helm",
+                "template",
+                "coderushoj",
+                str(CHART),
+                "--namespace",
+                "coderushoj",
+                "--values",
+                str(CHART / "values-kind.yaml"),
+                "--set",
+                "applications.enabled=true",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        judge_route = result.stdout.split("name: coderushoj-judge-api", 1)[1]
+        for path in ("/api/v1", "/readyz", "/livez"):
+            self.assertIn(f"value: {path}", judge_route)
+
 
 if __name__ == "__main__":
     unittest.main()

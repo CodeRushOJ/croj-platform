@@ -77,6 +77,12 @@ spec:
         - path:
             type: PathPrefix
             value: /api/v1
+        - path:
+            type: Exact
+            value: /readyz
+        - path:
+            type: Exact
+            value: /livez
       backendRefs:
         - name: {{ .Values.services.judge.name }}
           port: {{ .Values.services.judge.port }}

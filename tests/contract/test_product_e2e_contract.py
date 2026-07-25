@@ -11,6 +11,7 @@ NETWORK_E2E = ROOT / "tests/e2e/network-policy.sh"
 DEPLOY = ROOT / "scripts/deploy-product-e2e.sh"
 CLEANUP = ROOT / "scripts/cleanup-product-e2e.sh"
 INSTALL_NETWORKING = ROOT / "scripts/install-kind-networking.sh"
+CAPTURE_FAILURE_LOGS = ROOT / "scripts/capture-product-e2e-logs.sh"
 KIND_CONFIG = ROOT / "config/kind/product-e2e.yaml"
 BROWSER_E2E_ROOT = ROOT / "tests/e2e/browser"
 BROWSER_PACKAGE = BROWSER_E2E_ROOT / "package.json"
@@ -50,6 +51,7 @@ class ProductE2EContractTest(unittest.TestCase):
 
     def test_product_gate_always_collects_redacted_failure_diagnostics(self):
         workflow = WORKFLOW.read_text()
+        deploy = DEPLOY.read_text()
         self.assertIn("- name: Collect redacted product E2E diagnostics", workflow)
         self.assertIn("if: failure()", workflow)
         self.assertIn("scripts/diagnostics.sh", workflow)
@@ -58,6 +60,19 @@ class ProductE2EContractTest(unittest.TestCase):
             "product-e2e-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}",
             workflow,
         )
+        self.assertIn("capture-product-e2e-logs.sh", deploy)
+        self.assertIn(".workspace/product-e2e/", workflow)
+        self.assertNotIn(
+            "--rollback-on-failure",
+            deploy.split(
+                'log "deploying real application images and the one-shot SUPER_ADMIN bootstrap"',
+                1,
+            )[1],
+        )
+        capture = CAPTURE_FAILURE_LOGS.read_text()
+        self.assertIn('logs "$pod"', capture)
+        self.assertIn("--previous", capture)
+        self.assertIn("REDACTED SENSITIVE LOG LINE", capture)
 
     def test_product_gate_installs_and_runs_pinned_chromium_after_api_seed(self):
         workflow = WORKFLOW.read_text()
@@ -352,6 +367,35 @@ class ProductE2EContractTest(unittest.TestCase):
         self.assertIn(".result.totalScore == 100", script)
         self.assertIn("sourceSha256", script)
         self.assertIn("special judge job", script)
+
+    def test_product_oi_callback_is_visible_in_public_and_admin_scoreboards(self):
+        script = PRODUCT_E2E.read_text()
+        operations = PRODUCT_E2E_DOC.read_text()
+        self.assertIn("product-oi-submission.json", script)
+        self.assertIn(
+            '"/api/v1/contests/${oi_contest_id}/scoreboard"',
+            script,
+        )
+        self.assertIn(
+            '"/api/v1/admin/contests/${oi_contest_id}/scoreboard"',
+            script,
+        )
+        for contract in (
+            ".data.ruleType == \"OI\"",
+            ".data.maximumScore == 100",
+            ".username == $username",
+            ".totalScore == 30",
+            ".scoredProblems == 1",
+            ".maximumScore == 100",
+            ".score == 30",
+            ".submissionId == $submissionId",
+            ".achievedAt != null",
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, script)
+        self.assertIn("OI 排行榜", operations)
+        self.assertIn("/api/v1/contests/{contestId}/scoreboard", operations)
+        self.assertIn("/api/v1/admin/contests/{contestId}/scoreboard", operations)
 
     def test_webhook_e2e_is_explicit_fail_closed_and_signature_checked(self):
         script = PRODUCT_E2E.read_text()

@@ -200,6 +200,14 @@ printf 'Authorization: Bearer %s\n' "$jwt" >"$run_dir/admin.headers"
 chmod 600 "$run_dir/admin.headers"
 unset jwt captcha_code
 
+request_json "$run_dir/admin-user.json" "$primary_host" GET \
+  "/api/user/info" "$run_dir/admin.headers" ""
+assert_result_success "$run_dir/admin-user.json"
+admin_user_id="$(jq -er '.data.id' "$run_dir/admin-user.json")"
+jq -e --arg username "$(cat "$secret_root/admin-username")" \
+  '.data.username == $username' "$run_dir/admin-user.json" >/dev/null \
+  || die "bootstrapped administrator identity does not match the login account"
+
 log "creating, uploading, and publishing a TestBundle through the admin HTTP API"
 manual_problem_title="Manual TestBundle $cluster_name"
 jq -n --arg title "$manual_problem_title" '{
@@ -630,6 +638,170 @@ done
 jq -e '.data.status == 1 and .data.statusText == "通过"' \
   "$run_dir/submission.json" >/dev/null \
   || die "correct product submission did not reach ACCEPTED"
+
+log "publishing an OI v2 problem and verifying callback-backed public and admin scoreboards"
+jq -n --arg title "Product OI $cluster_name" '{
+  title:$title,
+  description:"Return one for input one; this product gate intentionally misses the second case.",
+  inputDescription:"One integer.",
+  outputDescription:"The required integer.",
+  hints:[],
+  samples:[{input:"1",output:"1"}],
+  timeLimit:1000,
+  memoryLimit:64,
+  difficulty:2,
+  checker:"exact",
+  isSpecialJudge:false,
+  specialJudgeCode:null,
+  specialJudgeLanguage:null,
+  judgeMode:1,
+  totalScore:100,
+  source:"platform-product-e2e-oi",
+  status:1,
+  tagIds:[]
+}' >"$run_dir/product-oi-problem-create.json"
+request_json "$run_dir/product-oi-problem-created.json" "$primary_host" POST \
+  "/api/problem" "$run_dir/admin.headers" "$run_dir/product-oi-problem-create.json"
+assert_result_success "$run_dir/product-oi-problem-created.json"
+oi_problem_id="$(jq -er '.data' "$run_dir/product-oi-problem-created.json")"
+
+request_json "$run_dir/product-oi-versions.json" "$primary_host" GET \
+  "/api/v1/admin/problems/${oi_problem_id}/versions" "$run_dir/admin.headers" ""
+assert_result_success "$run_dir/product-oi-versions.json"
+oi_version_id="$(
+  jq -er '.data | map(select(.state == "DRAFT" and .attached == false))
+    | select(length == 1) | .[0].versionId' \
+    "$run_dir/product-oi-versions.json"
+)"
+oi_bundle_etag="$(
+  jq -er '.data | map(select(.state == "DRAFT" and .attached == false))
+    | select(length == 1) | .[0].etag' \
+    "$run_dir/product-oi-versions.json"
+)"
+product_oi_bundle="$run_dir/product-oi-bundle.zip"
+(
+  cd "$SCRIPT_DIR/bundle-oi"
+  python3 -m zipfile -c "$product_oi_bundle" manifest.json 1.in 1.out 2.in 2.out
+)
+oi_bundle_endpoint="/api/v1/admin/problems/${oi_problem_id}/versions/${oi_version_id}/test-bundle"
+product_oi_upload_status="$(
+  curl --silent --show-error \
+    --output "$run_dir/product-oi-bundle-uploaded.json" \
+    --write-out "%{http_code}" \
+    --request PUT \
+    --header "Host: $primary_host" \
+    --header "@$run_dir/admin.headers" \
+    --header "If-Match: $oi_bundle_etag" \
+    --form "file=@$product_oi_bundle;type=application/zip" \
+    "$gateway_url$oi_bundle_endpoint"
+)"
+[[ "$product_oi_upload_status" == "200" ]] \
+  || die "product OI TestBundle upload returned HTTP $product_oi_upload_status"
+assert_result_success "$run_dir/product-oi-bundle-uploaded.json"
+oi_uploaded_etag="$(jq -er '.data.etag' "$run_dir/product-oi-bundle-uploaded.json")"
+request_json "$run_dir/product-oi-bundle-published.json" "$primary_host" POST \
+  "$oi_bundle_endpoint/publish" "$run_dir/admin.headers" "" \
+  --header "If-Match: $oi_uploaded_etag"
+assert_result_success "$run_dir/product-oi-bundle-published.json"
+jq -e '.data.state == "PUBLISHED" and .data.attached == true' \
+  "$run_dir/product-oi-bundle-published.json" >/dev/null \
+  || die "product OI TestBundle was not published"
+
+oi_contest_times="$(
+  python3 -c '
+import datetime, json
+now = datetime.datetime.now(datetime.timezone.utc)
+fmt = lambda value: value.isoformat(timespec="seconds").replace("+00:00", "Z")
+print(json.dumps({
+  "registrationOpensAt": fmt(now - datetime.timedelta(minutes=10)),
+  "registrationClosesAt": fmt(now - datetime.timedelta(minutes=2)),
+  "startsAt": fmt(now - datetime.timedelta(minutes=1)),
+  "freezeAt": fmt(now + datetime.timedelta(minutes=30)),
+  "endsAt": fmt(now + datetime.timedelta(minutes=60)),
+}))
+'
+)"
+jq -n --argjson times "$oi_contest_times" \
+  '$times + {title:"Product OI scoreboard",descriptionMarkdown:"Real OI callback scoreboard.",ruleType:"OI",visibility:"PUBLIC"}' \
+  >"$run_dir/product-oi-contest-create.json"
+request_json "$run_dir/product-oi-contest-created.json" "$primary_host" POST \
+  "/api/v1/admin/contests" "$run_dir/admin.headers" \
+  "$run_dir/product-oi-contest-create.json"
+assert_result_success "$run_dir/product-oi-contest-created.json"
+oi_contest_id="$(jq -er '.data' "$run_dir/product-oi-contest-created.json")"
+jq -n --argjson problemId "$oi_problem_id" \
+  --argjson problemVersionId "$oi_version_id" \
+  '{problems:[{problemId:$problemId,problemVersionId:$problemVersionId,label:"A",score:100}]}' \
+  >"$run_dir/product-oi-contest-problems.json"
+request_json "$run_dir/product-oi-contest-arranged.json" "$primary_host" PUT \
+  "/api/v1/admin/contests/${oi_contest_id}/problems" "$run_dir/admin.headers" \
+  "$run_dir/product-oi-contest-problems.json"
+assert_result_success "$run_dir/product-oi-contest-arranged.json"
+request_json "$run_dir/product-oi-contest-published.json" "$primary_host" POST \
+  "/api/v1/admin/contests/${oi_contest_id}/publish" "$run_dir/admin.headers" ""
+assert_result_success "$run_dir/product-oi-contest-published.json"
+request_json "$run_dir/product-oi-registration.json" "$primary_host" POST \
+  "/api/v1/admin/contests/${oi_contest_id}/registrations/${admin_user_id}" \
+  "$run_dir/admin.headers" ""
+assert_result_success "$run_dir/product-oi-registration.json"
+jq -e '.data == "REGISTERED"' "$run_dir/product-oi-registration.json" >/dev/null \
+  || die "administrator was not registered in the OI contest"
+
+jq -n --argjson problemId "$oi_problem_id" \
+  --argjson contestId "$oi_contest_id" \
+  --arg code '#include <iostream>
+int main(){int value; std::cin>>value; std::cout<<(value==1?1:0)<<"\n";}' \
+  '{problemId:$problemId,contestId:$contestId,language:"cpp",code:$code}' \
+  >"$run_dir/product-oi-submission-create.json"
+request_json "$run_dir/product-oi-submission-created.json" "$primary_host" POST \
+  "/api/submission" "$run_dir/admin.headers" \
+  "$run_dir/product-oi-submission-create.json"
+assert_result_success "$run_dir/product-oi-submission-created.json"
+oi_submission_id="$(jq -er '.data' "$run_dir/product-oi-submission-created.json")"
+oi_product_terminal="false"
+for _ in $(seq 1 150); do
+  request_json "$run_dir/product-oi-submission.json" "$primary_host" GET \
+    "/api/submission/${oi_submission_id}" "$run_dir/admin.headers" ""
+  assert_result_success "$run_dir/product-oi-submission.json"
+  if (( "$(jq -er '.data.status' "$run_dir/product-oi-submission.json")" != 0 )); then
+    oi_product_terminal="true"
+    break
+  fi
+  sleep 2
+done
+[[ "$oi_product_terminal" == "true" ]] \
+  || die "product OI submission never reached a terminal callback state"
+jq -e '.data.status == 3 and .data.score == 30' \
+  "$run_dir/product-oi-submission.json" >/dev/null \
+  || die "product OI callback did not persist the expected 30/100 partial score"
+
+request_json "$run_dir/product-oi-public-scoreboard.json" "$primary_host" GET \
+  "/api/v1/contests/${oi_contest_id}/scoreboard" "" ""
+assert_result_success "$run_dir/product-oi-public-scoreboard.json"
+request_json "$run_dir/product-oi-admin-scoreboard.json" "$primary_host" GET \
+  "/api/v1/admin/contests/${oi_contest_id}/scoreboard" \
+  "$run_dir/admin.headers" ""
+assert_result_success "$run_dir/product-oi-admin-scoreboard.json"
+for scoreboard_file in \
+  "$run_dir/product-oi-public-scoreboard.json" \
+  "$run_dir/product-oi-admin-scoreboard.json"; do
+  jq -e \
+    --arg username "$(cat "$secret_root/admin-username")" \
+    --argjson submissionId "$oi_submission_id" '
+      .data.ruleType == "OI"
+      and .data.maximumScore == 100
+      and (.data.rows | length) == 1
+      and .data.rows[0].username == $username
+      and .data.rows[0].totalScore == 30
+      and .data.rows[0].scoredProblems == 1
+      and (.data.rows[0].problems | length) == 1
+      and .data.rows[0].problems[0].maximumScore == 100
+      and .data.rows[0].problems[0].score == 30
+      and .data.rows[0].problems[0].submissionId == $submissionId
+      and .data.rows[0].problems[0].achievedAt != null
+    ' "$scoreboard_file" >/dev/null \
+    || die "OI scoreboard does not expose the callback-backed user and problem score"
+done
 
 log "uploading a real external bundle and polling the asynchronous REST job"
 printf 'Authorization: Bearer %s\n' "$(cat "$secret_root/external-api-key")" \

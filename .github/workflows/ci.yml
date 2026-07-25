@@ -247,7 +247,9 @@ jobs:
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: product-e2e-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .workspace/diagnostics/
+          path: |
+            .workspace/diagnostics/
+            .workspace/product-e2e/${{ env.CROJ_E2E_CLUSTER_NAME }}/failure-logs/
           if-no-files-found: warn
           retention-days: 14
 

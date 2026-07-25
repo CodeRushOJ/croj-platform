@@ -23,23 +23,37 @@
 2. 通过 `POST /api/problem` 创建私有草稿，从版本管理 API 读取唯一 `DRAFT` 及强 ETag，生成 limits 与题目严格一致、路径位于 `cases/` 的 TestBundle v1 ZIP。测试依次用 `If-Match` 调用元数据读取、multipart 上传和原子发布接口，并以匿名题目详情验证它已公开。
 3. 使用锁定 Backend 源码携带的 LGPL/NOTICE FPS 样例做 preflight 和 commit，从题目列表按唯一标题找到题目，再通过管理 API 读取唯一的 `PUBLISHED` 不可变版本。测试不会直读 MySQL。
 4. 提交正确 C++ 程序，轮询 Backend 提交详情直到 `ACCEPTED`，由真实 RocketMQ、Judging、TestBundle、headless sandbox Service 和内部回调完成闭环。
-5. 创建并公开全局公告、题目关联讨论、绑定题目版本的题解，以及编排了该不可变题目版本的公开比赛。
-6. 调用邮件验证码接口，并通过临时、受控的 Mailpit API port-forward 验证 SMTP 投递。port-forward 由脚本 EXIT trap 终止。
-7. 上传包含两个测试点的外部 TestBundle，调用异步 `POST /api/v1/judge-jobs`
+5. 创建 OI 题目并通过管理 API 上传、发布 manifest v2 TestBundle，向运行中的
+   OI 比赛提交只得 `30/100` 的真实代码。内部回调落库后，同时读取公开
+   `/api/v1/contests/{contestId}/scoreboard` 与管理
+   `/api/v1/admin/contests/{contestId}/scoreboard`；两份 OI 排行榜都必须返回
+   相同的用户名、总分、分题分数、submission ID 和 achievedAt，作为真实 MySQL
+   的评分与查询兼容门禁。
+6. 创建并公开全局公告、题目关联讨论、绑定题目版本的题解，以及编排了该不可变题目版本的公开比赛。
+7. 调用邮件验证码接口，并通过临时、受控的 Mailpit API port-forward 验证 SMTP 投递。port-forward 由脚本 EXIT trap 终止。
+8. 上传包含两个测试点的外部 TestBundle，调用异步 `POST /api/v1/judge-jobs`
    并轮询终态；结果必须只有一个成功的 compile 状态和两个 `ACCEPTED` case。
-8. 上传 manifest v2 OI bundle。选手程序只通过权重 30 的第一个 case，终态必须
+9. 上传 manifest v2 OI bundle。选手程序只通过权重 30 的第一个 case，终态必须
    是 `WRONG_ANSWER`、得分 `30/100`，两个 case 的 `score/maxScore` 分别为
    `30/30` 与 `0/70`，证明异步 REST、MySQL 持久化与评分合同一致。
-9. 生成包含 checker SHA-256 的 manifest v2 special judge bundle。选手输出
+10. 生成包含 checker SHA-256 的 manifest v2 special judge bundle。选手输出
    `43`、标准输出为 `42`，只有受限 checker 明确接受后 job 才能 `ACCEPTED`；
    checker 源码不会在 Judging 或 runner 上直接执行。
-10. 读取 `sandbox-workers` EndpointSlice，要求至少两个 ready endpoint 分布在
+11. 读取 `sandbox-workers` EndpointSlice，要求至少两个 ready endpoint 分布在
     两个 sandbox worker；临时固定 digest 的 probe 执行
     `getent ahostsv4 sandbox-workers`，DNS 地址集合必须与 Ready EndpointSlice
     完全一致。Judging Deployment 必须使用 `dns:///...` 且关闭 legacy
     EndpointSlice fallback。
-11. 检查 Frontend、Backend、Docs、Judge 健康入口，再从未授权 Pod 探测
+12. 检查 Frontend、Backend、Docs、Judge 健康入口，再从未授权 Pod 探测
     Backend 和 sandbox Service。Calico 必须阻断两个连接，合法业务流此前必须成功。
+
+应用安装前，部署脚本会等待 `submission-topic` 的 `topicRoute` 至少包含
+`broker-a`。这与 Judging 内部的 fresh-consumer 监督重试共同处理 RocketMQ
+NameServer 已就绪、但 topic route 尚未传播完成的启动窗口。一次性 E2E 应用安装
+失败时不会先回滚 Pod；错误 trap 会在集群清理前抓取 current/previous 日志，并把
+包含 password、secret、token、cookie、Authorization、API key 或 DSN 标记的整行
+替换为 `[REDACTED SENSITIVE LOG LINE]`。其余 describe/events/Helm 状态仍由
+`scripts/diagnostics.sh` 的原子 bundle 发布协议收集。
 
 ## 真实 Webhook 门禁
 

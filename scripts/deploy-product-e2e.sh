@@ -22,6 +22,7 @@ readonly secret_root="$state_root/secrets"
   || die "kubectl context is not the owned product E2E cluster"
 
 deployment_failed() {
+  "$SCRIPT_DIR/capture-product-e2e-logs.sh" "$namespace" || true
   "$SCRIPT_DIR/diagnostics.sh" "$namespace" || true
 }
 trap deployment_failed ERR
@@ -59,6 +60,26 @@ kubectl exec --namespace "$namespace" statefulset/coderushoj-infra-mysql -- \
       --execute="CREATE DATABASE IF NOT EXISTS coderushoj_judge CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci; GRANT ALL PRIVILEGES ON coderushoj_judge.* TO '\''$MYSQL_USER'\''@'\''%'\'';"
   '
 
+log "waiting for the canonical RocketMQ submission topic to have a broker route"
+rocketmq_route_ready="false"
+for _ in $(seq 1 60); do
+  rocketmq_route="$(
+    kubectl exec --namespace "$namespace" \
+      statefulset/coderushoj-infra-rocketmq-broker -- \
+      sh mqadmin topicRoute \
+        -n coderushoj-infra-rocketmq-namesrv:9876 \
+        -t submission-topic 2>/dev/null || true
+  )"
+  if [[ "$rocketmq_route" == *'"brokerName":"broker-a"'* ]]; then
+    rocketmq_route_ready="true"
+    break
+  fi
+  sleep 2
+done
+unset rocketmq_route
+[[ "$rocketmq_route_ready" == "true" ]] \
+  || die "RocketMQ submission-topic has no reachable broker route"
+
 kubectl create secret generic "$bootstrap_secret" \
   --namespace "$namespace" \
   --from-file=username="$secret_root/admin-username" \
@@ -75,7 +96,6 @@ helm upgrade --install coderushoj "$CODERUSHOJ_ROOT/charts/coderushoj" \
   --values "$CODERUSHOJ_ROOT/charts/coderushoj/values-kind-app.yaml" \
   --set adminBootstrap.enabled=true \
   --set adminBootstrap.secretName="$bootstrap_secret" \
-  --rollback-on-failure \
   --wait \
   --wait-for-jobs \
   --timeout 15m

@@ -203,6 +203,22 @@ class InfrastructureRenderTest(unittest.TestCase):
         self.assertIn("app.kubernetes.io/component: rocketmq-topic-bootstrap", broker_ingress)
         self.assertIn("port: 10911", broker_ingress)
 
+    def test_rocketmq_bootstrap_waits_for_and_verifies_a_routable_broker(self):
+        rendered = self.render()
+        topic_job = rendered.split(
+            "name: coderushoj-infra-rocketmq-topics", 1
+        )[1].split("\n---", 1)[0]
+        self.assertIn(
+            'until sh mqadmin clusterList -n "$namesrv" 2>/dev/null '
+            "| grep -Fq CodeRushCluster",
+            topic_job,
+        )
+        self.assertIn(
+            'until sh mqadmin topicRoute -n "$namesrv" -t submission-topic '
+            "2>/dev/null | grep -Fq broker-a",
+            topic_job,
+        )
+
     def test_local_memory_requests_fit_workstation_budget(self):
         rendered = self.render()
         requests = re.findall(r"requests:\n\s+cpu: [^\n]+\n\s+memory: (\d+)(Mi|Gi)", rendered)

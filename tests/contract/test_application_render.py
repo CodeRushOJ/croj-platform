@@ -166,6 +166,7 @@ class ApplicationRenderTest(unittest.TestCase):
         self.assertIn("coderushoj.io/sandbox: \"true\"", rendered)
         self.assertIn("kind: NetworkPolicy", rendered)
         self.assertIn("name: coderushoj-backend-internal-ingress", rendered)
+        self.assertIn("terminationMessagePolicy: FallbackToLogsOnError", rendered)
         self.assertIn("kind: PodDisruptionBudget", rendered)
         self.assertGreaterEqual(rendered.count("mountPath: /var/cache/nginx"), 2)
         self.assertGreaterEqual(rendered.count("mountPath: /var/run"), 2)

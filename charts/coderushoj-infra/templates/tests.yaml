@@ -35,9 +35,10 @@ spec:
             - -ec
             - |
               namesrv={{ include "coderushoj-infra.fullname" . }}-rocketmq-namesrv:9876
-              until sh mqadmin clusterList -n "$namesrv" >/dev/null 2>&1; do sleep 3; done
+              until sh mqadmin clusterList -n "$namesrv" 2>/dev/null | grep -Fq CodeRushCluster; do sleep 3; done
               sh mqadmin updateTopic -n "$namesrv" -c CodeRushCluster -t submission-topic
               sh mqadmin updateTopic -n "$namesrv" -c CodeRushCluster -t submission-dead-letter-topic
+              until sh mqadmin topicRoute -n "$namesrv" -t submission-topic 2>/dev/null | grep -Fq broker-a; do sleep 3; done
           resources:
             requests:
               cpu: 50m

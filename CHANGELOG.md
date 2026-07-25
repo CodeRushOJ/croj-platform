@@ -12,11 +12,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - 平台源码锁更新到已评审的 Frontend、Backend、Judging Server 与 Sandbox v1 发布候选提交。
 - 三节点产品门禁增加外部 manifest v2 OI `30/100` 部分分与沙箱内 special judge 闭环，并保留原 Backend → RocketMQ → Judging → Sandbox → callback → MySQL 主链。
+- Backend OI 内部回调后同时断言公开与管理员排行榜的用户名、总分、分题得分、submission ID 和 achievedAt，形成真实 MySQL 排行榜兼容门禁。
 - 增加可选真实公网 HTTPS Webhook 验收：运维 CLI 注册 callback，异步 job 触发 outbox 投递，assertion API 返回原始 body/header 后由门禁重新计算 HMAC-SHA256。
 
 ### Fixes
 
 - 补齐外部 Judge 启动所需的独立 `coderushoj_judge` DSN、版本化 source/callback key ring Secret 引用，以及主容器前带 advisory lock 的 schema migration init container。
+- Judge schema bootstrap 强制通过容器内 `127.0.0.1` TCP 连接 MySQL，避免依赖镜像特定的 Unix socket 路径。
+- RocketMQ topic bootstrap 和产品部署都等待 `submission-topic` 返回真实 broker route；Judging legacy consumer 同时具备 fresh-consumer 重试，暂态 route race 不再拖垮外部 REST 健康入口。
+- 一次性产品 E2E 在失败时保留未回滚 Pod，通过敏感行过滤后收集 current/previous 容器日志，并让 Judging 终止消息回退到错误日志，缩短远程 CI 排障闭环。
 - 产品 E2E 现在比较 `sandbox-workers` DNS A 记录与 Ready EndpointSlice address，并核对 Judging 始终使用 `dns:///...` 且关闭 legacy discovery。
 
 ### Security

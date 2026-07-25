@@ -225,6 +225,7 @@ spec:
         - name: judging-server
           image: {{ include "coderushoj.image" (dict "image" .Values.images.judgingServer "profile" .Values.deploymentProfile) }}
           imagePullPolicy: {{ .Values.images.judgingServer.pullPolicy }}
+          terminationMessagePolicy: FallbackToLogsOnError
           {{- if .Values.judgingServer.externalAPI.enabled }}
           ports:
             - {name: external-http, containerPort: 8081, protocol: TCP}

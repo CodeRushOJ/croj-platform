@@ -24,6 +24,7 @@ SCRIPTS = (
     "scripts/checkout-sources.sh",
     "scripts/build-dev-images.sh",
     "scripts/load-dev-images.sh",
+    "scripts/capture-product-e2e-logs.sh",
     "scripts/verify-test-bundle-contract.sh",
     "tests/smoke/platform.sh",
 )

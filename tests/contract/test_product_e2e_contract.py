@@ -590,6 +590,25 @@ class ProductE2EContractTest(unittest.TestCase):
     def test_product_oi_callback_is_visible_in_public_and_admin_scoreboards(self):
         script = PRODUCT_E2E.read_text()
         operations = PRODUCT_E2E_DOC.read_text()
+        oi_manifest = json.loads(
+            (ROOT / "tests/e2e/bundle-oi/manifest.json").read_text()
+        )
+        oi_problem_create = script[
+            script.index('log "publishing an OI v2 problem')
+            : script.index("oi_problem_id=")
+        ]
+        self.assertIn(
+            f'timeLimit:{oi_manifest["limits"]["timeLimitMillis"]}',
+            oi_problem_create,
+        )
+        self.assertIn(
+            f'memoryLimit:{oi_manifest["limits"]["memoryLimitMiB"]}',
+            oi_problem_create,
+        )
+        self.assertIn(
+            f'totalScore:{oi_manifest["totalScore"]}',
+            oi_problem_create,
+        )
         self.assertIn("product-oi-submission.json", script)
         self.assertIn(
             '"/api/v1/contests/${oi_contest_id}/scoreboard"',

@@ -724,7 +724,7 @@ jq -n --arg title "Product OI $cluster_name" '{
   hints:[],
   samples:[{input:"1",output:"1"}],
   timeLimit:1000,
-  memoryLimit:64,
+  memoryLimit:256,
   difficulty:2,
   checker:"exact",
   isSpecialJudge:false,

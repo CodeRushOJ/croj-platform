@@ -43,10 +43,10 @@ IMAGES = {
 DOCS_IMAGE = "ghcr.io/coderushoj/coderushoj-docs:dev"
 PLATFORM_REPOSITORY = "https://github.com/CodeRushOJ/croj-platform.git"
 RELEASE_CANDIDATES = {
-    "frontend": "cc41966aec402617bf9193b849422e083dd7f3df",
-    "backend": "e3337b025e83d50cf521b44315885cc3253ab37e",
-    "judging-server": "ab39bbcf4fb44e95f0933a535de44ac704dc1759",
-    "sandbox": "e67104312a2fc9a9302fc3c416a2bc76e417e308",
+    "frontend": "ecc08c7ed1aaab4a0e57d6b88ad0271555fc3dfa",
+    "backend": "ffbd9584b7f5e5c5fb304b5027d140dd37a2cce9",
+    "judging-server": "c38a509754971c5078aa15296f7126f6777daba3",
+    "sandbox": "f927ba0baaaf4d4100f6ba20ec0d6b68d2cd96af",
 }
 
 

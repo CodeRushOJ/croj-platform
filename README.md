@@ -25,7 +25,7 @@ make smoke
 
 ## 不可变跨仓库构建
 
-`config/source-lock.json` 只锁定 Frontend、Backend、Judging Server 和 Sandbox 四个外部仓库。每项只接受 CodeRushOJ 官方 HTTPS 仓库、40 位小写 Git commit、受约束的构建路径和 Chart 使用的精确 `:dev` 镜像名；branch、tag 和 `latest` 都不能作为跨仓库验收真相。Docs 不自引用旧的平台提交：开发与产品 E2E 始终从当前平台 checkout 构建 Docs 镜像，并用当前 `GITHUB_SHA`（本地为 `HEAD`）写入 OCI provenance；正式文档镜像由 release workflow 从已签名 tag 的当前 tree 构建。
+`config/source-lock.json` 只锁定 Frontend、Backend、Judging Server 和 Sandbox 四个外部仓库。每项只接受 CodeRushOJ 官方 HTTPS 仓库、40 位小写 Git commit、受约束的构建路径和 Chart 使用的精确 `:dev` 镜像名；branch、tag 和 `latest` 都不能作为跨仓库验收真相。Docs 不自引用旧的平台提交：开发与产品 E2E 始终从当前平台 checkout 构建 Docs 镜像，并用当前 `GITHUB_SHA`（本地为 `HEAD`）写入 OCI provenance；正式文档镜像由 release workflow 从最新 `main` 上的 annotated SemVer tag 当前 tree 构建。
 
 ```bash
 make source-verify
@@ -40,7 +40,7 @@ make images-load
 
 ## 项目状态
 
-- 当前平台版本：`0.1.0`
+- 当前平台版本：`1.0.0`
 - 历史原型：2025-03-31 至 2025-04-26，详见 [CHANGELOG.md](CHANGELOG.md)
 - 目标：完整 v1.0 OJ，包含竞赛、论坛和题解，不包含付费功能
 - 参考容量：1,000 在线用户、100 并发提交、20 个并行沙箱执行

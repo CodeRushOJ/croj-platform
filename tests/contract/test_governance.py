@@ -106,6 +106,17 @@ class GovernanceContractTest(unittest.TestCase):
         self.assertIn("docker/build-push-action", workflow)
         self.assertIn("github.sha", workflow)
         self.assertIn("packages: write", workflow)
+        self.assertIn("id-token: write", workflow)
+        self.assertIn("docker/setup-qemu-action@", workflow)
+        self.assertIn("platforms: linux/amd64,linux/arm64", workflow)
+        self.assertIn("actions/attest-build-provenance@", workflow)
+        self.assertIn("push-to-registry: true", workflow)
+        self.assertIn("production-images.yaml", workflow)
+        self.assertIn("production-images.json", workflow)
+        self.assertIn("kubeconform", workflow)
+        self.assertIn("git fetch --no-tags origin main", workflow)
+        self.assertIn('test "$GITHUB_SHA" = "$(git rev-parse origin/main)"', workflow)
+        self.assertNotIn(".verification.verified", workflow)
 
     def test_release_uses_pinned_helm_and_publishes_the_default_docs_tag(self):
         workflow = self.read(".github/workflows/release.yml")
@@ -129,29 +140,29 @@ class GovernanceContractTest(unittest.TestCase):
             workflow,
         )
 
-    def test_first_release_version_and_notes_match_shipped_platform(self):
+    def test_v1_release_version_and_notes_match_shipped_platform(self):
         version = (ROOT / "VERSION").read_text().strip()
-        self.assertEqual("0.1.0", version)
+        self.assertEqual("1.0.0", version)
         for chart in ("charts/coderushoj/Chart.yaml", "charts/coderushoj-infra/Chart.yaml"):
             manifest = self.read(chart)
-            self.assertIn("version: 0.1.0", manifest)
-            self.assertIn('appVersion: "0.1.0"', manifest)
+            self.assertIn("version: 1.0.0", manifest)
+            self.assertIn('appVersion: "1.0.0"', manifest)
 
         changelog = self.read("CHANGELOG.md")
-        unreleased = changelog.split("## [Unreleased]", 1)[1].split("## [0.1.0]", 1)[0]
+        unreleased = changelog.split("## [Unreleased]", 1)[1].split("## [1.0.0]", 1)[0]
         for section in ("Features", "Fixes", "Security", "Operations"):
             self.assertIn(f"### {section}", unreleased)
         self.assertNotIn("TBD", unreleased)
         self.assertNotIn("TODO", unreleased)
-        self.assertIn("## [0.1.0] - 2026-07-24", changelog)
-        release = changelog.split("## [0.1.0] - 2026-07-24", 1)[1].split("\n## [", 1)[0]
+        self.assertIn("## [1.0.0] - 2026-07-25", changelog)
+        release = changelog.split("## [1.0.0] - 2026-07-25", 1)[1].split("\n## [", 1)[0]
         for shipped_fact in (
             "source-lock.json",
             "Mailpit",
             "sandbox-workers",
-            "TestBundle v1",
+            "TestBundle v2",
             "NetworkPolicy",
-            "尚未执行完整 Kind 端到端判题验收",
+            "production-images.yaml",
         ):
             self.assertIn(shipped_fact, release)
 

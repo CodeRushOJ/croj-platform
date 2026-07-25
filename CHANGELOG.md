@@ -10,8 +10,28 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Features
 
+- 后续兼容功能将记录在本节，并在下一次语义化发版时归档。
+
+### Fixes
+
+- 后续缺陷修复将记录在本节，并附带对应测试证据。
+
+### Security
+
+- 后续安全更新将记录在本节，并注明升级或密钥轮换影响。
+
+### Operations
+
+- 后续部署、监控与回滚变化将记录在本节。
+
+## [1.0.0] - 2026-07-25
+
+### Features
+
 - 平台源码锁更新到已评审的 Frontend、Backend、Judging Server 与 Sandbox v1 发布候选提交。
+- 完成 `config/source-lock.json` 锁定的前端、后端、Judge、Sandbox 与当前 Docs 构建的协调 v1 发布，保留真实 Mailpit 邮件、RocketMQ 主链与外部异步 REST 闭环。
 - 三节点产品门禁增加外部 manifest v2 OI `30/100` 部分分与沙箱内 special judge 闭环，并保留原 Backend → RocketMQ → Judging → Sandbox → callback → MySQL 主链。
+- Backend 与 Judging 的真实 `TestBundle v2` producer-to-consumer 门禁覆盖 OI 权重和 special checker，不依赖同名 mock fixture。
 - Backend OI 内部回调后同时断言公开与管理员排行榜的用户名、总分、分题得分、submission ID 和 achievedAt，形成真实 MySQL 排行榜兼容门禁。
 - 增加可选真实公网 HTTPS Webhook 验收：运维 CLI 注册 callback，异步 job 触发 outbox 投递，assertion API 返回原始 body/header 后由门禁重新计算 HMAC-SHA256。
 
@@ -27,10 +47,33 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Webhook E2E 不放宽公网 HTTPS、SSRF、DNS rebinding 或 redirect 防护；三项 receiver 配置不完整时失败关闭，未配置时不声称该门禁通过。
 - 一次性 callback secret、外部 API key、Judge DSN 与 AES key ring 只保存在 Git 忽略的 `0600` 文件或 Kubernetes Secret 引用中。
+- 应用默认使用最小权限 `NetworkPolicy`；发布只接受五个组件的精确仓库、tag、revision、digest 与 `linux/amd64`/`linux/arm64` 清单，并用 GitHub OIDC 写入 registry provenance。
 
 ### Operations
 
 - 部署与排障文档增加 Judge 专用 schema、migration init container、key rotation、Service DNS/EndpointSlice 对账及 Webhook receiver contract。
+- 发布工作流收集五个组件的 digest JSON，验证真实 registry index，生成 `production-images.yaml`/JSON、生产 Helm render、Kubeconform 结果与 SHA-256 checksums；生产部署不依赖可变镜像 tag。
+- Sandbox 由 `sandbox-workers` headless Service 和原生 EndpointSlice 承载，Judge 使用 DNS `round_robin`，RocketMQ NameServer 同样支持 Kubernetes Service DNS。
+
+### Migrations
+
+- Backend 在部署前执行已发布 Flyway V1–V13 migration；Judge 使用独立 schema migration init container 与 checksum 校验，业务 Pod 不隐式修改 schema。
+- 从 `0.1.0` 升级前必须先备份 MySQL 与对象存储，并在维护窗口内让 migration Job 成功完成后再滚动应用。
+
+### Known Limitations
+
+- Chart 内有状态依赖仍是适合本机、测试与单节点参考环境的配置；高可用生产应使用托管 MySQL、Redis、RocketMQ 与 S3 兼容对象存储。
+- 头像上传仍依赖 Backend 的 RWO PVC，切换到对象存储前 Backend 维持单副本；这不影响题目 TestBundle 与隐藏测试数据的 S3 路径。
+
+### Upgrade
+
+- 先在各组件最新 `main` 创建 annotated `v1.0.0` tag并等待双架构镜像与 provenance 成功，再在平台最新 `main` 创建同名 tag。
+- 使用 GitHub Release 中的 `production-images.yaml` 覆盖生产 values，先升级基础设施与 schema migration，再以 `helm upgrade --install --atomic` 升级应用。
+
+### Rollback
+
+- 使用 Release 附带的 `production-images.yaml` 与 Chart 包可恢复完全相同的五个镜像 digest；应用失败时执行 `helm rollback coderushoj <revision> -n coderushoj`。
+- Flyway 与 Judge migration 只允许向前兼容；涉及不可逆数据变化时先恢复升级前备份，再回滚应用和基础设施 release。
 
 ## [0.1.0] - 2026-07-24
 
@@ -155,6 +198,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - 判题服务仍包含模拟结果路径，沙箱隔离实现与 README 描述之间存在差距。
 - 缺少系统化的前后端测试、真实隐藏测试数据、CI、升级回滚与运维文档。
 
-[Unreleased]: https://github.com/CodeRushOJ/croj-platform/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/CodeRushOJ/croj-platform/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/CodeRushOJ/croj-platform/releases/tag/v1.0.0
 [0.1.0]: https://github.com/CodeRushOJ/croj-platform/releases/tag/v0.1.0
 [0.0.1]: https://github.com/orgs/CodeRushOJ/repositories

@@ -8,28 +8,59 @@ on:
 permissions:
   contents: write
   packages: write
+  actions: read
+  id-token: write
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  DOCS_IMAGE: ghcr.io/coderushoj/coderushoj-docs
+
 jobs:
   release:
-    name: Verify and publish immutable artifacts
+    name: Verify and publish immutable v1 artifacts
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
-      - name: Check out signed tag
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Check out annotated release tag
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
 
-      - name: Verify version, charts, changelog, and tag signature
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Set up Python
+        uses: actions/setup-python@a309aee8db4089c5051c96f38770e4e70d436b05 # v6.2.0
+        with:
+          python-version: '3.13'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.0.0
+        with:
+          node-version: '24.15.0'
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.0.0
+        with:
+          go-version: '1.26.5'
+          cache: false
+
+      - name: Set up Helm
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v4.2.3
+
+      - name: Verify version, annotated tag, latest main, charts, and changelog
+        shell: bash
         run: |
+          set -euo pipefail
           version="$(tr -d '\r\n' < VERSION)"
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           test "$GITHUB_REF_NAME" = "v$version"
+          git rev-parse "$GITHUB_REF_NAME^{tag}" >/dev/null
+          test "$(git rev-parse "$GITHUB_REF_NAME^{commit}")" = "$GITHUB_SHA"
+          git fetch --no-tags origin main
+          test "$GITHUB_SHA" = "$(git rev-parse origin/main)"
           test "$(helm show chart charts/coderushoj | awk '/^version:/ {print $2}')" = "$version"
           test "$(helm show chart charts/coderushoj-infra | awk '/^version:/ {print $2}')" = "$version"
           grep -Fq "## [$version]" CHANGELOG.md
@@ -42,19 +73,9 @@ jobs:
           for heading in Features Fixes Security Migrations Operations "Known Limitations" Upgrade Rollback; do
             grep -Fq "### $heading" "$release_section_file"
           done
-          rm -f "$release_section_file"
-          tag_object="$(git rev-parse "$GITHUB_REF_NAME^{tag}")"
-          test "$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_object" --jq .verification.verified)" = true
 
-      - name: Set up Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: '24.15.0'
-
-      - name: Set up Helm
-        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
-        with:
-          version: v4.2.3
+      - name: Run the complete static release gate
+        run: make validate
 
       - name: Build documentation
         run: |
@@ -64,7 +85,9 @@ jobs:
           pnpm build
 
       - name: Package Helm charts and release notes
+        shell: bash
         run: |
+          set -euo pipefail
           version="$(tr -d '\r\n' < VERSION)"
           mkdir -p dist
           helm lint charts/coderushoj
@@ -78,24 +101,26 @@ jobs:
           ' CHANGELOG.md > dist/release-notes.md
           test -s dist/release-notes.md
 
-      - name: Set immutable image name
-        run: echo "DOCS_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/coderushoj-docs" >> "$GITHUB_ENV"
-
       - name: Log in to GHCR
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.0.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ github.token }}
+
+      - name: Set up QEMU for cross-architecture builds
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.11.1
 
-      - name: Build and publish documentation image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+      - name: Build and publish multi-architecture documentation image
+        id: push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.18.0
         with:
           context: docs
           file: docs/Dockerfile
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ env.DOCS_IMAGE }}:${{ github.ref_name }}
@@ -109,15 +134,167 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Attest documentation image with GitHub OIDC
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.0
+        with:
+          subject-name: ${{ env.DOCS_IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Record documentation image manifest
+        env:
+          IMAGE_DIGEST: ${{ steps.push.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg repository "$DOCS_IMAGE" \
+            --arg tag "$GITHUB_REF_NAME" \
+            --arg revision "$GITHUB_SHA" \
+            --arg digest "$IMAGE_DIGEST" \
+            --argjson platforms '["linux/amd64","linux/arm64"]' \
+            '{repository:$repository,tag:$tag,revision:$revision,digest:$digest,platforms:$platforms}' \
+            > dist/docs-image.json
+
+      - name: Download the four component release manifests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/component-images
+
+          download_manifest() {
+            local component="$1"
+            local repository="$2"
+            local workflow="$3"
+            local revision="$4"
+            local artifact="$5"
+            local output="$6"
+            local response candidate run_id download_directory
+            local -a candidates=()
+            local -a matching_runs=()
+
+            response="$(gh api -X GET \
+              "repos/CodeRushOJ/$repository/actions/workflows/$workflow/runs" \
+              -f event=push \
+              -f status=completed \
+              -f per_page=100)"
+            mapfile -t candidates < <(jq -r \
+              --arg revision "$revision" \
+              '[.workflow_runs[] |
+                select(.head_sha == $revision and .conclusion == "success") |
+                .id] | .[]' <<<"$response")
+            for candidate in "${candidates[@]}"; do
+              if gh api -X GET \
+                "repos/CodeRushOJ/$repository/actions/runs/$candidate/artifacts" \
+                -f per_page=100 |
+                jq -e --arg artifact "$artifact" \
+                  'any(.artifacts[]; .name == $artifact and (.expired | not))' \
+                  >/dev/null; then
+                matching_runs+=("$candidate")
+              fi
+            done
+            if ((${#matching_runs[@]} != 1)); then
+              printf 'Expected one non-expired %s artifact for %s@%s, found %d\n' \
+                "$artifact" "$repository" "$revision" "${#matching_runs[@]}" >&2
+              return 1
+            fi
+            run_id="${matching_runs[0]}"
+            download_directory="dist/component-images/$component"
+            mkdir -p "$download_directory"
+            gh run download "$run_id" \
+              --repo "CodeRushOJ/$repository" \
+              --name "$artifact" \
+              --dir "$download_directory"
+            test -f "$download_directory/$output"
+          }
+
+          frontend_revision="$(jq -er '.sources.frontend.commit' config/source-lock.json)"
+          backend_revision="$(jq -er '.sources.backend.commit' config/source-lock.json)"
+          judging_revision="$(jq -er '.sources["judging-server"].commit' config/source-lock.json)"
+          sandbox_revision="$(jq -er '.sources.sandbox.commit' config/source-lock.json)"
+
+          download_manifest frontend croj-frontend ci.yml \
+            "$frontend_revision" "image-artifact-$GITHUB_REF_NAME" image-artifact.json
+          download_manifest backend croj-backend image.yml \
+            "$backend_revision" "backend-image-$backend_revision" backend-image.json
+          download_manifest judging-server croj-judging-server ci.yml \
+            "$judging_revision" "judging-server-image-$judging_revision" judging-server-image.json
+          download_manifest sandbox croj-sandbox ci.yml \
+            "$sandbox_revision" "sandbox-image-$sandbox_revision" sandbox-image.json
+
+      - name: Validate and assemble digest-only production image values
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/build-production-image-manifest.py \
+            --version "$(tr -d '\r\n' < VERSION)" \
+            --source-lock config/source-lock.json \
+            --platform-revision "$GITHUB_SHA" \
+            --manifest frontend=dist/component-images/frontend/image-artifact.json \
+            --manifest backend=dist/component-images/backend/backend-image.json \
+            --manifest judging-server=dist/component-images/judging-server/judging-server-image.json \
+            --manifest sandbox=dist/component-images/sandbox/sandbox-image.json \
+            --manifest docs=dist/docs-image.json \
+            --output-directory dist
+
+      - name: Verify registry indexes contain exactly amd64 and arm64 images
+        shell: bash
+        run: |
+          set -euo pipefail
+          for component in frontend backend judging-server sandbox docs; do
+            repository="$(jq -er --arg component "$component" '.images[$component].repository' dist/production-images.json)"
+            digest="$(jq -er --arg component "$component" '.images[$component].digest' dist/production-images.json)"
+            docker buildx imagetools inspect --raw "$repository@$digest" |
+              jq -e '
+                [.manifests[] |
+                  select(.platform.os != "unknown") |
+                  (.platform.os + "/" + .platform.architecture)] |
+                sort == ["linux/amd64", "linux/arm64"]
+              ' >/dev/null
+          done
+
+      - name: Render and validate digest-only production deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          go install github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0
+          helm template coderushoj charts/coderushoj \
+            --namespace coderushoj \
+            --values charts/coderushoj/values-production.yaml \
+            --values dist/production-images.yaml \
+            --set backend.smtp.host=smtp.operator.example \
+            --set backend.smtp.username=coderushoj@operator.example \
+            > dist/production-render.yaml
+          "$(go env GOPATH)/bin/kubeconform" \
+            -strict -summary -ignore-missing-schemas \
+            dist/production-render.yaml
+
       - name: Generate artifact checksums
-        run: cd dist && sha256sum ./*.tgz ./release-notes.md > SHA256SUMS
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          checksums="$(mktemp)"
+          find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 |
+            sort -z |
+            xargs -0 sha256sum > "$checksums"
+          mv "$checksums" SHA256SUMS
+          test -s SHA256SUMS
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            dist/*.tgz dist/SHA256SUMS \
+            dist/*.tgz \
+            dist/SHA256SUMS \
+            dist/release-notes.md \
+            dist/docs-image.json \
+            dist/production-images.json \
+            dist/production-images.yaml \
+            dist/production-render.yaml \
             --verify-tag \
             --title "CodeRushOJ $GITHUB_REF_NAME" \
             --notes-file dist/release-notes.md

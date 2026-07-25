@@ -50,27 +50,27 @@ dependencies:
 images:
   frontend:
     repository: ghcr.io/coderushoj/croj-frontend
-    tag: 0.1.0
+    tag: 1.0.0
     digest: ""
     pullPolicy: IfNotPresent
   backend:
     repository: ghcr.io/coderushoj/croj-backend
-    tag: 0.1.0
+    tag: 1.0.0
     digest: ""
     pullPolicy: IfNotPresent
   judgingServer:
     repository: ghcr.io/coderushoj/croj-judging-server
-    tag: 0.1.0
+    tag: 1.0.0
     digest: ""
     pullPolicy: IfNotPresent
   sandbox:
     repository: ghcr.io/coderushoj/croj-sandbox
-    tag: 0.1.0
+    tag: 1.0.0
     digest: ""
     pullPolicy: IfNotPresent
   docs:
     repository: ghcr.io/coderushoj/coderushoj-docs
-    tag: v0.1.0
+    tag: v1.0.0
     digest: ""
     pullPolicy: IfNotPresent
 

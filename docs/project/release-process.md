@@ -7,8 +7,9 @@ CodeRushOJ 遵循 [SemVer](https://semver.org/) 和协调发布模型。各服�
 - `MAJOR`：不兼容的 API、数据或部署契约变化。
 - `MINOR`：保持兼容的新功能。
 - `PATCH`：保持兼容的修复、安全加固或运维改进。
-- 正式标签必须是签名的 `v<VERSION>`，标签版本、两个 Chart 版本和 `CHANGELOG.md` 条目必须一致。
+- 正式标签必须是最新 `main` 提交上的 annotated `v<VERSION>`；标签版本、两个 Chart 版本和 `CHANGELOG.md` 条目必须一致。发布不要求把维护者私钥交给 CI。
 - 禁止部署 `latest`；主分支镜像至少发布 `sha-<git-sha>`，协调版本另发布不可变版本标签。
+- 生产部署只使用 `repository@sha256:...`；版本标签用于发现，digest 才是运行时身份。
 
 ## Release note 必需章节
 
@@ -30,9 +31,10 @@ CodeRushOJ 遵循 [SemVer](https://semver.org/) 和协调发布模型。各服�
 3. 从上一支持版本升级，验证 Flyway、RocketMQ 消费、对象版本、判题任务和排行榜。
 4. 完成 MySQL 与对象存储备份恢复演练，以 `SELECT 1`、业务抽样和隐藏测试对象校验恢复结果。
 5. 更新 `VERSION`、Chart 版本、兼容镜像、`CHANGELOG.md` 和文档。
-6. 创建并验证签名标签：`git tag -s v$(cat VERSION) -m "CodeRushOJ v$(cat VERSION)"`。
-7. CI 构建文档镜像、打包 Chart、生成 SHA-256 校验值并发布 GitHub Release。
-8. 部署版本标签，观察 API 错误率、队列滞后、Job 失败和数据库状态；满足观察窗口后关闭发版 Issue。
+6. 依次在 Frontend、Backend、Judging Server 与 Sandbox 最新 `main` 创建同版本 annotated tag：`git tag -a v$(cat VERSION) -m "CodeRushOJ v$(cat VERSION)"`；等待各仓双架构镜像、SBOM、OIDC provenance 和 digest JSON 全部成功。
+7. 在平台最新 `main` 创建 annotated tag。CI 构建双架构 Docs 镜像，收集四个组件的 digest JSON，并严格核对仓库、tag、源码锁 revision、digest、`linux/amd64`/`linux/arm64` registry index。
+8. CI 生成 `production-images.yaml`/JSON，以 digest-only values 渲染并用 Kubeconform 校验生产 Helm，打包 Chart、render、release notes 与 SHA-256 checksums 后发布 GitHub Release。
+9. 使用 Release 的 `production-images.yaml` 部署，观察 API 错误率、队列滞后、Job 失败和数据库状态；满足观察窗口后关闭发版 Issue。
 
 ## 紧急修复
 

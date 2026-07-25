@@ -36,8 +36,8 @@ features:
 
 ## 当前状态
 
-平台 `0.1.0` 已完成三节点 Kind、Gateway API、Envoy Gateway、MySQL、Redis、RocketMQ、SeaweedFS 和真实冒烟测试。业务服务继续在原有四个代码仓库内迭代，不会另建替代实现。
+平台 `1.0.0` 已完成三节点 Kind 上前端、后端、Judge、Sandbox、MySQL、Redis、RocketMQ、SeaweedFS、Mailpit 与真实浏览器/判题闭环，并保留跨仓独立迭代和不可变源码锁。
 
-::: warning 阶段边界
-Docker Compose 当前可直接启动平台依赖；完整前端、后端与判题镜像会在对应原仓库完成测试和镜像流水线后接入。Kubernetes 路由与基础设施已实际部署验证。
+::: warning 生产边界
+仓库内有状态依赖适合本机和参考部署；高可用生产应使用托管数据服务，并从 GitHub Release 的 digest-only 清单部署应用镜像。
 :::

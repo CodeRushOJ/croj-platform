@@ -100,7 +100,7 @@ helm upgrade --install coderushoj ./charts/coderushoj \
 
 ### 不可变源码与开发镜像
 
-`config/source-lock.json` 固定 frontend、backend、judging-server 和 sandbox 四个外部仓库的 40 位 commit、Dockerfile、构建上下文及精确 `:dev` 镜像名。校验器拒绝 branch/tag、外部仓库、路径穿越、未知字段、缺失组件和重复镜像。Docs 不进入源码锁，也不会从旧平台提交构建；`images-build` 直接使用当前平台 checkout，并用当前 `GITHUB_SHA`（本地为 `HEAD`）标记 Docs 镜像。平台 checkout 必须完全干净，包括 tracked、staged 和 untracked 文件；若工作树不干净，或环境中的 `GITHUB_SHA` 与 checkout 的 `HEAD` 不同，构建和加载都会 fail closed，避免给未提交内容写入错误 provenance。release workflow 仍从已签名 tag 的当前 tree 构建正式文档镜像。
+`config/source-lock.json` 固定 frontend、backend、judging-server 和 sandbox 四个外部仓库的 40 位 commit、Dockerfile、构建上下文及精确 `:dev` 镜像名。校验器拒绝 branch/tag、外部仓库、路径穿越、未知字段、缺失组件和重复镜像。Docs 不进入源码锁，也不会从旧平台提交构建；`images-build` 直接使用当前平台 checkout，并用当前 `GITHUB_SHA`（本地为 `HEAD`）标记 Docs 镜像。平台 checkout 必须完全干净，包括 tracked、staged 和 untracked 文件；若工作树不干净，或环境中的 `GITHUB_SHA` 与 checkout 的 `HEAD` 不同，构建和加载都会 fail closed，避免给未提交内容写入错误 provenance。release workflow 从最新 `main` 的 annotated SemVer tag 构建正式文档镜像，并输出五组件 digest-only 生产清单。
 
 ```bash
 make source-verify

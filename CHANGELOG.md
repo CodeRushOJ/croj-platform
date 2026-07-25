@@ -251,7 +251,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - 判题服务仍包含模拟结果路径，沙箱隔离实现与 README 描述之间存在差距。
 - 缺少系统化的前后端测试、真实隐藏测试数据、CI、升级回滚与运维文档。
 
-[Unreleased]: https://github.com/CodeRushOJ/croj-platform/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/CodeRushOJ/croj-platform/releases/tag/v1.0.0
+[Unreleased]: https://github.com/CodeRushOJ/croj-platform/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/CodeRushOJ/croj-platform/releases/tag/v1.0.1
+[1.0.0]: https://github.com/CodeRushOJ/croj-platform/tree/v1.0.0
 [0.1.0]: https://github.com/CodeRushOJ/croj-platform/releases/tag/v0.1.0
 [0.0.1]: https://github.com/orgs/CodeRushOJ/repositories

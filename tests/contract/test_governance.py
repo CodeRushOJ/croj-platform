@@ -179,6 +179,18 @@ class GovernanceContractTest(unittest.TestCase):
         ):
             self.assertIn(f"### {section}", release)
         self.assertIn("actions/setup-python", release)
+        self.assertIn(
+            f"[Unreleased]: https://github.com/CodeRushOJ/croj-platform/compare/v{version}...HEAD",
+            changelog,
+        )
+        self.assertIn(
+            f"[{version}]: https://github.com/CodeRushOJ/croj-platform/releases/tag/v{version}",
+            changelog,
+        )
+        self.assertIn(
+            "[1.0.0]: https://github.com/CodeRushOJ/croj-platform/tree/v1.0.0",
+            changelog,
+        )
         prior_release = changelog.split("## [1.0.0] - 2026-07-25", 1)[1].split(
             "\n## [", 1
         )[0]

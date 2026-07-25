@@ -49,7 +49,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Sandbox headless Service DNS 探针改为显式创建 Pod、等待成功终态、读取日志后删除，避免短任务在 `kubectl --attach --rm` 建立连接前已经退出而丢失真实 DNS 结果。
 - Sandbox worker 节点标签验收使用 Kubernetes JSONPath 规定的单反斜杠转义，避免正确分布到两个专用节点的 Ready endpoint 被空标签结果误报为失败。
 - Kind 本地 Chart 的 Backend CORS allowlist 与浏览器实际入口 `http://coderushoj.local:8080` 保持一致，真实 Chromium 登录不再被 Spring Security 以 `Invalid CORS request` 拒绝；生产域名仍由 production values 独立指定。
-- Playwright 先清空 Monaco 的可访问文本框，再用真实逐键事件输入无缩进歧义的单行 C++ 源码并在提交前精确断言编辑器值，让编辑器正确执行自动闭合字符的 overtype，不依赖会被渲染行覆盖的指针点击或缺少键盘事件的批量文本注入。
+- Playwright 通过跨平台 `ControlOrMeta+A` 选中 Monaco 的完整模型，再用真实逐键事件替换为无缩进歧义的单行 C++ 源码并在提交前精确断言编辑器值；这既让编辑器正确执行自动闭合字符的 overtype，也避免 `textarea.fill` 只清除当前输入区而残留模板尾部。
 - 平台与四个组件的 release job 补齐 GitHub `attestations: write` 最小权限，避免镜像已推送但 OIDC provenance 因 API `403` 无法持久化。
 - 修复 Calico 默认拒绝出站时 Mailpit 无法向 Backend 返回 SMTP greeting、邮件接口最终被 Envoy 504 的问题；仅限本地的 Mailpit 现在只可向可配置的精确 Kind node/Pod CIDR 回包，真实 E2E 在业务请求前验证完整 SMTP `220` 协议握手。
 - Backend SMTP 连接、读取与写入增加 3s/5s/5s 默认超时和 Helm 覆盖项，裸机与容器部署同样在启动时校验 `100–60000ms` 整数范围；传输失败会在应用层有界返回，不再依赖网关超时终止请求。

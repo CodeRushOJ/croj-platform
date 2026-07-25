@@ -138,7 +138,7 @@ test("administrator completes the real browser product journey", async ({
   const sourceCode = 'extern "C" int scanf(const char*,...);extern "C" int '
     + 'printf(const char*,...);int main(){long long a,b;while(scanf('
     + '"%lld%lld",&a,&b)==2)printf("%lld\\n",a+b);}';
-  await editor.fill("");
+  await editor.press("ControlOrMeta+A");
   await editor.pressSequentially(sourceCode);
   await expect(editor).toHaveValue(sourceCode);
   const submissionResponsePromise = page.waitForResponse(

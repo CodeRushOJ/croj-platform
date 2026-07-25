@@ -29,6 +29,22 @@ class RepositoryContractTest(unittest.TestCase):
         self.assertIn("宿主 Go 是可选工具", quickstart)
         self.assertIn("Docker Compose 路径仍可用", quickstart)
 
+    def test_brewfile_includes_optional_openjdk_17_for_host_maven_tests(self):
+        brewfile = self.read_required("Brewfile")
+        quickstart = self.read_required("docs/guide/quickstart.md")
+        self.assertIn('brew "openjdk@17"\n', brewfile)
+        self.assertIn("OpenJDK 17 是可选工具", quickstart)
+        self.assertIn("本机 Maven 测试", quickstart)
+        self.assertIn(
+            'export PATH="$(brew --prefix openjdk@17)/bin:$PATH"',
+            quickstart,
+        )
+        self.assertIn(
+            'export JAVA_HOME="$(brew --prefix openjdk@17)/libexec/'
+            'openjdk.jdk/Contents/Home"',
+            quickstart,
+        )
+
     def test_versions_are_pinned(self):
         values = {}
         for line in self.read_required("config/versions.env").splitlines():

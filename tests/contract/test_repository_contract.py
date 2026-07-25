@@ -22,6 +22,13 @@ class RepositoryContractTest(unittest.TestCase):
         makefile = self.read_required("Makefile")
         self.assertIn("unittest discover -s tests/contract", makefile)
 
+    def test_brewfile_includes_optional_host_go_without_blocking_docker_paths(self):
+        brewfile = self.read_required("Brewfile")
+        quickstart = self.read_required("docs/guide/quickstart.md")
+        self.assertIn('brew "go"\n', brewfile)
+        self.assertIn("宿主 Go 是可选工具", quickstart)
+        self.assertIn("Docker Compose 路径仍可用", quickstart)
+
     def test_versions_are_pinned(self):
         values = {}
         for line in self.read_required("config/versions.env").splitlines():

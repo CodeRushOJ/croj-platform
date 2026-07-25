@@ -1,6 +1,6 @@
 # 安装与部署
 
-CodeRushOJ 提供两条路径：Docker Compose 用于单机开发和快速体验；三节点 Kind + Helm 用于验证生产形态、Kubernetes 调度和判题沙箱。用户不需要在宿主机安装 Java、Go、Node、MySQL、Redis 或 RocketMQ。
+CodeRushOJ 提供两条路径：Docker Compose 用于单机开发和快速体验；三节点 Kind + Helm 用于验证生产形态、Kubernetes 调度和判题沙箱。用户不需要在宿主机安装 Java、Node、MySQL、Redis 或 RocketMQ；宿主 Go 是可选工具。
 
 ## 前置条件
 
@@ -10,6 +10,8 @@ macOS 推荐 Colima；Linux 可直接使用 Docker Engine。仓库的 `Brewfile`
 brew bundle --file Brewfile
 colima start --cpu 6 --memory 8 --disk 50 --arch aarch64 --vm-type vz
 ```
+
+`brew bundle` 会安装 Go，供本机执行 Go 静态检查和 `go install` 类工具安装。若开发者只使用容器化命令，可以不单独准备宿主 Go，Docker Compose 路径仍可用，镜像构建也继续在 Docker/Buildx 中完成。
 
 Homebrew 的 Compose 与 Buildx 是 Docker CLI 插件。Apple Silicon 默认插件目录为 `/opt/homebrew/lib/docker/cli-plugins`，Intel Mac 通常为 `/usr/local/lib/docker/cli-plugins`。将实际的 `$(brew --prefix)/lib/docker/cli-plugins` 合并到 `~/.docker/config.json`：
 

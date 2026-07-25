@@ -25,6 +25,34 @@ CHANGELOG = ROOT / "CHANGELOG.md"
 
 
 class ProductE2EContractTest(unittest.TestCase):
+    def test_product_http_calls_are_bounded_and_readiness_is_observable(self):
+        product = PRODUCT_E2E.read_text()
+        self.assertIn('readonly curl_connect_timeout_seconds="5"', product)
+        self.assertIn('readonly curl_max_time_seconds="30"', product)
+        self.assertIn("curl_bounded()", product)
+        self.assertIn(
+            '--connect-timeout "$curl_connect_timeout_seconds"',
+            product,
+        )
+        self.assertIn('--max-time "$curl_max_time_seconds"', product)
+        self.assertIn("curl_probe()", product)
+        self.assertIn("--connect-timeout 2", product)
+        self.assertIn("--max-time 5", product)
+        self.assertIn('log "waiting for HTTP readiness: $host$endpoint"', product)
+        self.assertIn('log "HTTP readiness confirmed: $host$endpoint"', product)
+        raw_curl_calls = [
+            line
+            for line in product.splitlines()
+            if re.search(r"\bcurl\s", line)
+            and "require_command curl" not in line
+            and "command curl" not in line
+        ]
+        self.assertEqual(
+            [],
+            raw_curl_calls,
+            "business and readiness requests must use a bounded curl helper",
+        )
+
     def test_product_gate_builds_locked_sources_and_owns_one_disposable_cluster(self):
         workflow = WORKFLOW.read_text()
         self.assertIn("platform-product-e2e:", workflow)

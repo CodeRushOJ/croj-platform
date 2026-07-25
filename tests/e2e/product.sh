@@ -65,6 +65,20 @@ else
 fi
 unset webhook_assert_token webhook_value
 
+readonly curl_connect_timeout_seconds="5"
+readonly curl_max_time_seconds="30"
+
+curl_bounded() {
+  command curl \
+    --connect-timeout "$curl_connect_timeout_seconds" \
+    --max-time "$curl_max_time_seconds" \
+    "$@"
+}
+
+curl_probe() {
+  command curl --connect-timeout 2 --max-time 5 "$@"
+}
+
 request_json() {
   local output="$1"
   local host="$2"
@@ -93,7 +107,7 @@ request_json() {
     )
   fi
   arguments+=("$@" "$gateway_url$endpoint")
-  status="$(curl "${arguments[@]}")"
+  status="$(curl_bounded "${arguments[@]}")"
   [[ "$status" =~ ^2[0-9][0-9]$ ]] \
     || die "$method $endpoint returned HTTP $status"
 }
@@ -108,10 +122,12 @@ wait_for_http() {
   local host="$1"
   local endpoint="$2"
   local attempts=60
+  log "waiting for HTTP readiness: $host$endpoint"
   while ((attempts > 0)); do
-    if curl --silent --show-error --fail \
+    if curl_probe --silent --show-error --fail \
       --header "Host: $host" \
       "$gateway_url$endpoint" >/dev/null 2>&1; then
+      log "HTTP readiness confirmed: $host$endpoint"
       return
     fi
     attempts=$((attempts - 1))
@@ -131,7 +147,7 @@ kubectl port-forward --namespace "$namespace" \
   --address 127.0.0.1 >"$run_dir/mailpit-port-forward.log" 2>&1 &
 port_forward_pid="$!"
 for _ in $(seq 1 30); do
-  if curl --silent --show-error --fail \
+  if curl_bounded --silent --show-error --fail \
     "http://127.0.0.1:18025/api/v1/messages" \
     --output "$run_dir/mail-before.json"; then
     break
@@ -145,7 +161,7 @@ request_json "$run_dir/email-code.json" "$primary_host" POST \
 assert_result_success "$run_dir/email-code.json"
 mail_delivered="false"
 for _ in $(seq 1 30); do
-  curl --silent --show-error --fail \
+  curl_bounded --silent --show-error --fail \
     "http://127.0.0.1:18025/api/v1/messages" \
     --output "$run_dir/mail-after.json"
   mail_after="$(jq -r '.total // .messages_count // (.messages | length)' "$run_dir/mail-after.json")"
@@ -159,7 +175,7 @@ done
 
 log "logging in as the bootstrapped SUPER_ADMIN through the real HTTP API"
 captcha_status="$(
-  curl --silent --show-error \
+  curl_bounded --silent --show-error \
     --dump-header "$run_dir/captcha.headers" \
     --output "$run_dir/captcha.jpg" \
     --write-out "%{http_code}" \
@@ -257,7 +273,7 @@ manual_list_etag="$(
 
 manual_bundle_endpoint="/api/v1/admin/problems/${manual_problem_id}/versions/${manual_version_id}/test-bundle"
 manual_metadata_status="$(
-  curl --silent --show-error \
+  curl_bounded --silent --show-error \
     --dump-header "$run_dir/manual-bundle-metadata.headers" \
     --output "$run_dir/manual-bundle-metadata.json" \
     --write-out "%{http_code}" \
@@ -302,7 +318,7 @@ manual_bundle_zip="$run_dir/manual-test-bundle.zip"
 )
 
 manual_upload_status="$(
-  curl --silent --show-error \
+  curl_bounded --silent --show-error \
     --dump-header "$run_dir/manual-bundle-uploaded.headers" \
     --output "$run_dir/manual-bundle-uploaded.json" \
     --write-out "%{http_code}" \
@@ -331,7 +347,7 @@ jq -e --arg etag "$uploaded_bundle_etag" '
   || die "manual TestBundle upload did not return attached metadata and a new ETag"
 
 manual_publish_status="$(
-  curl --silent --show-error \
+  curl_bounded --silent --show-error \
     --dump-header "$run_dir/manual-bundle-published.headers" \
     --output "$run_dir/manual-bundle-published.json" \
     --write-out "%{http_code}" \
@@ -452,7 +468,7 @@ readonly fps_package="$sources_root/backend/$backend_commit/src/test/resources/p
 
 log "importing and publishing the real locked FPS package"
 preflight_status="$(
-  curl --silent --show-error \
+  curl_bounded --silent --show-error \
     --output "$run_dir/import-preflight.json" \
     --write-out "%{http_code}" \
     --request POST \
@@ -685,7 +701,7 @@ product_oi_bundle="$run_dir/product-oi-bundle.zip"
 )
 oi_bundle_endpoint="/api/v1/admin/problems/${oi_problem_id}/versions/${oi_version_id}/test-bundle"
 product_oi_upload_status="$(
-  curl --silent --show-error \
+  curl_bounded --silent --show-error \
     --output "$run_dir/product-oi-bundle-uploaded.json" \
     --write-out "%{http_code}" \
     --request PUT \
@@ -819,7 +835,7 @@ bundle_zip="$run_dir/external-test-bundle.zip"
   python3 -m zipfile -c "$bundle_zip" manifest.json 1.in 1.out 2.in 2.out
 )
 bundle_status="$(
-  curl --silent --show-error \
+  curl_bounded --silent --show-error \
     --output "$run_dir/bundle-created.json" \
     --write-out "%{http_code}" \
     --request POST \
@@ -873,7 +889,7 @@ oi_bundle_zip="$run_dir/external-oi-bundle.zip"
   python3 -m zipfile -c "$oi_bundle_zip" manifest.json 1.in 1.out 2.in 2.out
 )
 oi_bundle_status="$(
-  curl --silent --show-error \
+  curl_bounded --silent --show-error \
     --output "$run_dir/oi-bundle-created.json" \
     --write-out "%{http_code}" \
     --request POST \
@@ -938,7 +954,7 @@ spj_bundle_zip="$run_dir/external-spj-bundle.zip"
     manifest.json checker/main.cpp 1.in 1.out
 )
 spj_bundle_status="$(
-  curl --silent --show-error \
+  curl_bounded --silent --show-error \
     --output "$run_dir/spj-bundle-created.json" \
     --write-out "%{http_code}" \
     --request POST \
@@ -996,7 +1012,7 @@ if [[ "$webhook_value_count" == "3" ]]; then
   webhook_received="false"
   for _ in $(seq 1 60); do
     webhook_status="$(
-      curl --silent --show-error \
+      curl_bounded --silent --show-error \
         --output "$run_dir/webhook-capture.json" \
         --write-out "%{http_code}" \
         --header "@$run_dir/webhook-assert.headers" \

@@ -179,6 +179,29 @@ class GovernanceContractTest(unittest.TestCase):
                     f"action must be pinned to a full commit SHA: {action_ref}",
                 )
 
+    def test_shared_actions_use_one_verified_revision_across_workflows(self):
+        revisions = {}
+        for workflow_path in sorted((GITHUB / "workflows").glob("*.yml")):
+            workflow = workflow_path.read_text()
+            for action_ref in re.findall(r"uses:\s+([^\s#]+)", workflow):
+                if action_ref.startswith("./") or action_ref.startswith("docker://"):
+                    continue
+                action, revision = action_ref.rsplit("@", 1)
+                revisions.setdefault(action, {}).setdefault(revision, []).append(
+                    workflow_path.name
+                )
+
+        conflicts = {
+            action: references
+            for action, references in revisions.items()
+            if len(references) > 1
+        }
+        self.assertEqual(
+            {},
+            conflicts,
+            "shared actions must use one already-verified immutable revision",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

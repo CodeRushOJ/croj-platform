@@ -2,6 +2,7 @@ import pathlib
 import json
 import re
 import subprocess
+import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -126,6 +127,107 @@ class ProductE2EContractTest(unittest.TestCase):
             product.index("Mailpit ESMTP Service ready"),
             product.index("/api/email/code?email="),
         )
+
+    def test_captcha_fixtures_json_decode_redis_strings_and_fail_closed(self):
+        product = PRODUCT_E2E.read_text()
+        captcha_shell = product.split(
+            "# This is an intentional white-box anti-bot fixture:",
+            1,
+        )[1].split("jq -n", 1)[0]
+        self.assertIn('captcha_code_json="$(', captcha_shell)
+        self.assertIn(
+            'jq -er \'if type == "string" and length > 0 then . else error(',
+            captcha_shell,
+        )
+        self.assertIn(
+            'die "captcha value in Redis was not a non-empty JSON string"',
+            captcha_shell,
+        )
+        self.assertNotIn("tr -d", captcha_shell)
+
+        browser = BROWSER_SPEC.read_text()
+        captcha_browser = browser.split(
+            "const readCaptchaCode",
+            1,
+        )[1].split("\ntest(", 1)[0]
+        self.assertIn("JSON.parse(redisValue)", captcha_browser)
+        self.assertIn('typeof captchaCode !== "string"', captcha_browser)
+        self.assertIn("captchaCode.length === 0", captcha_browser)
+        self.assertIn(
+            'throw new Error("Redis captcha value must be a non-empty JSON string")',
+            captcha_browser,
+        )
+        self.assertNotIn(".trim()", captcha_browser)
+
+    def test_backend_failure_output_is_allowlisted_and_never_dumps_response_data(self):
+        product = PRODUCT_E2E.read_text()
+        assertion = "assert_result_success() {" + product.split(
+            "assert_result_success() {",
+            1,
+        )[1].split(
+            "\n}",
+            1,
+        )[0] + "\n}"
+        self.assertIn("backend response summary", assertion)
+        self.assertIn('if type == "boolean" then . else null end', assertion)
+        self.assertIn('if type == "number" then . else null end', assertion)
+        self.assertIn("messagePresent", assertion)
+        self.assertNotIn(".[0:256]", assertion)
+        self.assertNotIn("cat ", assertion)
+        self.assertNotIn(".data", assertion)
+
+        harness = "\n".join(
+            (
+                "set -Eeuo pipefail",
+                "die() { printf 'failure\\n' >&2; return 1; }",
+                assertion,
+                'assert_result_success "$1"',
+            )
+        )
+        responses = (
+            (
+                {
+                    "success": {"token": "NESTED_SUCCESS_SECRET"},
+                    "code": {"password": "NESTED_CODE_SECRET"},
+                    "message": "MESSAGE_SECRET",
+                    "data": {"token": "DATA_SECRET"},
+                },
+                (
+                    '"success":null',
+                    '"code":null',
+                    '"messagePresent":true',
+                ),
+            ),
+            (
+                {"success": False, "code": 40003, "msg": "SECOND_MESSAGE_SECRET"},
+                (
+                    '"success":false',
+                    '"code":40003',
+                    '"messagePresent":true',
+                ),
+            ),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            response_path = pathlib.Path(directory) / "response.json"
+            for response, expected in responses:
+                response_path.write_text(json.dumps(response))
+                completed = subprocess.run(
+                    ["bash", "-c", harness, "bash", str(response_path)],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertNotEqual(0, completed.returncode)
+                for fragment in expected:
+                    self.assertIn(fragment, completed.stderr)
+                for marker in (
+                    "NESTED_SUCCESS_SECRET",
+                    "NESTED_CODE_SECRET",
+                    "MESSAGE_SECRET",
+                    "SECOND_MESSAGE_SECRET",
+                    "DATA_SECRET",
+                ):
+                    self.assertNotIn(marker, completed.stderr)
 
     def test_product_gate_installs_and_runs_pinned_chromium_after_api_seed(self):
         workflow = WORKFLOW.read_text()

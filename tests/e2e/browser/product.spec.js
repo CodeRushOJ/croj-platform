@@ -18,22 +18,34 @@ const readSecret = (name) => fs.readFileSync(
   "utf8",
 ).trim();
 
-const readCaptchaCode = (captchaKey) => execFileSync(
-  "kubectl",
-  [
-    "exec",
-    "--namespace",
-    namespace,
-    "statefulset/coderushoj-infra-redis",
-    "--",
-    "/bin/sh",
-    "-ec",
-    'REDISCLI_AUTH="$REDIS_PASSWORD" exec redis-cli --raw GET "$1"',
-    "sh",
-    `captchaCode:${captchaKey}`,
-  ],
-  { encoding: "utf8" },
-).trim();
+const readCaptchaCode = (captchaKey) => {
+  const redisValue = execFileSync(
+    "kubectl",
+    [
+      "exec",
+      "--namespace",
+      namespace,
+      "statefulset/coderushoj-infra-redis",
+      "--",
+      "/bin/sh",
+      "-ec",
+      'REDISCLI_AUTH="$REDIS_PASSWORD" exec redis-cli --raw GET "$1"',
+      "sh",
+      `captchaCode:${captchaKey}`,
+    ],
+    { encoding: "utf8" },
+  );
+  let captchaCode;
+  try {
+    captchaCode = JSON.parse(redisValue);
+  } catch {
+    throw new Error("Redis captcha value must be valid JSON");
+  }
+  if (typeof captchaCode !== "string" || captchaCode.length === 0) {
+    throw new Error("Redis captcha value must be a non-empty JSON string");
+  }
+  return captchaCode;
+};
 
 test("administrator completes the real browser product journey", async ({
   context,

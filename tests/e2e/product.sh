@@ -118,8 +118,23 @@ request_json() {
 
 assert_result_success() {
   local response="$1"
-  jq -e '.success == true and .code == 20000' "$response" >/dev/null \
-    || die "backend returned an unsuccessful product response"
+  local summary
+  if jq -e '.success == true and .code == 20000' "$response" >/dev/null; then
+    return 0
+  fi
+  summary="$(
+    jq -c \
+      '{
+        success: (.success | if type == "boolean" then . else null end),
+        code: (.code | if type == "number" then . else null end),
+        messagePresent: ((.message // .msg // null) | type == "string")
+      }' \
+      "$response" 2>/dev/null \
+      || printf '%s' '{"success":null,"code":null,"messagePresent":false,"invalidJson":true}'
+  )"
+  printf '[coderushoj] backend response summary (%s): %s\n' \
+    "${response##*/}" "$summary" >&2
+  die "backend returned an unsuccessful product response"
 }
 
 wait_for_http() {
@@ -232,13 +247,20 @@ captcha_key="$(
 # stored by the real captcha endpoint from the real test-cluster Redis, then
 # exercises the unchanged production login API. No bypass exists in the app.
 # shellcheck disable=SC2016
-captcha_code="$(
+captcha_code_json="$(
   kubectl exec --namespace "$namespace" statefulset/coderushoj-infra-redis -- \
     /bin/sh -ec 'REDISCLI_AUTH="$REDIS_PASSWORD" exec redis-cli --raw GET "$1"' \
     sh "captchaCode:$captcha_key"
 )"
-captcha_code="$(tr -d '\r\n' <<<"$captcha_code")"
-[[ -n "$captcha_code" ]] || die "captcha value was absent from Redis"
+if ! captcha_code="$(
+  jq -er 'if type == "string" and length > 0 then . else error("captcha must be a non-empty JSON string") end' \
+    <<<"$captcha_code_json"
+)"; then
+  die "captcha value in Redis was not a non-empty JSON string"
+fi
+[[ -n "$captcha_code" ]] \
+  || die "captcha value in Redis was not a non-empty JSON string"
+unset captcha_code_json
 
 jq -n \
   --arg account "$(cat "$secret_root/admin-username")" \

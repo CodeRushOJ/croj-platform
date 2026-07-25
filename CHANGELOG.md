@@ -67,7 +67,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Upgrade
 
-- 先在各组件最新 `main` 创建 annotated `v1.0.0` tag并等待双架构镜像与 provenance 成功，再在平台最新 `main` 创建同名 tag。
+- 先合并四个组件 PR，记录 GitHub merge 后真实的最新 `main` SHA，并在这些提交创建 annotated `v1.0.0` tag；等待双架构镜像与 provenance 成功后，把平台 `source-lock.json` 更新到四个实际 tag target 并重跑最终 E2E，最后才合并和标记平台。
 - 使用 GitHub Release 中的 `production-images.yaml` 覆盖生产 values，先升级基础设施与 schema migration，再以 `helm upgrade --install --atomic` 升级应用。
 
 ### Rollback

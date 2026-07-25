@@ -107,6 +107,7 @@ class GovernanceContractTest(unittest.TestCase):
         self.assertIn("github.sha", workflow)
         self.assertIn("packages: write", workflow)
         self.assertIn("id-token: write", workflow)
+        self.assertIn("attestations: write", workflow)
         self.assertIn("docker/setup-qemu-action@", workflow)
         self.assertIn("platforms: linux/amd64,linux/arm64", workflow)
         self.assertIn("actions/attest-build-provenance@", workflow)

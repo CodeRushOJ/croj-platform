@@ -372,11 +372,10 @@ printf '42\n' >"$manual_bundle_dir/cases/1.out"
 printf '500 17\n' >"$manual_bundle_dir/cases/2.in"
 printf '517\n' >"$manual_bundle_dir/cases/2.out"
 manual_bundle_zip="$run_dir/manual-test-bundle.zip"
-(
-  cd "$manual_bundle_dir"
-  python3 -m zipfile -c "$manual_bundle_zip" \
-    manifest.json cases/1.in cases/1.out cases/2.in cases/2.out
-)
+python3 "$SCRIPT_DIR/build-test-bundle-fixture.py" \
+  "$manual_bundle_dir" \
+  "$manual_bundle_zip" \
+  manifest.json cases/1.in cases/1.out cases/2.in cases/2.out
 
 manual_upload_status="$(
   curl_bounded --silent --show-error \
@@ -756,10 +755,10 @@ oi_bundle_etag="$(
     "$run_dir/product-oi-versions.json"
 )"
 product_oi_bundle="$run_dir/product-oi-bundle.zip"
-(
-  cd "$SCRIPT_DIR/bundle-oi"
-  python3 -m zipfile -c "$product_oi_bundle" manifest.json 1.in 1.out 2.in 2.out
-)
+python3 "$SCRIPT_DIR/build-test-bundle-fixture.py" \
+  "$SCRIPT_DIR/bundle-oi" \
+  "$product_oi_bundle" \
+  manifest.json 1.in 1.out 2.in 2.out
 oi_bundle_endpoint="/api/v1/admin/problems/${oi_problem_id}/versions/${oi_version_id}/test-bundle"
 product_oi_upload_status="$(
   curl_bounded --silent --show-error \
@@ -891,10 +890,10 @@ jq -e '.apiVersion == "v1" and (.languages | any(.id == "cpp"))' \
   || die "external judge capabilities do not advertise C++"
 
 bundle_zip="$run_dir/external-test-bundle.zip"
-(
-  cd "$SCRIPT_DIR/bundle"
-  python3 -m zipfile -c "$bundle_zip" manifest.json 1.in 1.out 2.in 2.out
-)
+python3 "$SCRIPT_DIR/build-test-bundle-fixture.py" \
+  "$SCRIPT_DIR/bundle" \
+  "$bundle_zip" \
+  manifest.json 1.in 1.out 2.in 2.out
 bundle_status="$(
   curl_bounded --silent --show-error \
     --output "$run_dir/bundle-created.json" \
@@ -945,10 +944,10 @@ jq -e '
 
 log "running a manifest v2 OI job and verifying a durable partial score"
 oi_bundle_zip="$run_dir/external-oi-bundle.zip"
-(
-  cd "$SCRIPT_DIR/bundle-oi"
-  python3 -m zipfile -c "$oi_bundle_zip" manifest.json 1.in 1.out 2.in 2.out
-)
+python3 "$SCRIPT_DIR/build-test-bundle-fixture.py" \
+  "$SCRIPT_DIR/bundle-oi" \
+  "$oi_bundle_zip" \
+  manifest.json 1.in 1.out 2.in 2.out
 oi_bundle_status="$(
   curl_bounded --silent --show-error \
     --output "$run_dir/oi-bundle-created.json" \
@@ -1009,11 +1008,10 @@ jq --arg sourceSha256 "$spj_source_sha" \
   "$SCRIPT_DIR/bundle-spj/manifest.template.json" \
   >"$spj_bundle_dir/manifest.json"
 spj_bundle_zip="$run_dir/external-spj-bundle.zip"
-(
-  cd "$spj_bundle_dir"
-  python3 -m zipfile -c "$spj_bundle_zip" \
-    manifest.json checker/main.cpp 1.in 1.out
-)
+python3 "$SCRIPT_DIR/build-test-bundle-fixture.py" \
+  "$spj_bundle_dir" \
+  "$spj_bundle_zip" \
+  manifest.json checker/main.cpp 1.in 1.out
 spj_bundle_status="$(
   curl_bounded --silent --show-error \
     --output "$run_dir/spj-bundle-created.json" \

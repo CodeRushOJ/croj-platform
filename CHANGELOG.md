@@ -39,6 +39,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - 修复 API 与浏览器产品 E2E 将 Redis 中 Jackson 序列化的 CAPTCHA 原始 JSON（含引号）直接提交、导致真实管理员登录被拒绝的问题；夹具现在严格解码非空 JSON 字符串并对畸形值失败关闭。
 - 产品 E2E 的业务失败诊断只输出类型受限的 `success`、`code` 与 `messagePresent` 元数据，不会打印任意消息内容、响应 `data` 或原始正文。
+- TestBundle E2E 改用确定性 ZIP 构建器保留 manifest 声明的目录路径、普通文件类型和固定时间戳，避免通用 ZIP CLI 扁平化 `cases/`、`checker/` 路径后被后端正确拒绝。
+- 平台与四个组件的 release job 补齐 GitHub `attestations: write` 最小权限，避免镜像已推送但 OIDC provenance 因 API `403` 无法持久化。
 - 修复 Calico 默认拒绝出站时 Mailpit 无法向 Backend 返回 SMTP greeting、邮件接口最终被 Envoy 504 的问题；仅限本地的 Mailpit 现在只可向可配置的精确 Kind node/Pod CIDR 回包，真实 E2E 在业务请求前验证完整 SMTP `220` 协议握手。
 - Backend SMTP 连接、读取与写入增加 3s/5s/5s 默认超时和 Helm 覆盖项，裸机与容器部署同样在启动时校验 `100–60000ms` 整数范围；传输失败会在应用层有界返回，不再依赖网关超时终止请求。
 - 固定 digest 的 E2E 网络探针改用 `IfNotPresent`，避免 Kind 导入 manifest-list 后 kubelet 因缺少原始 digest 引用报 `ErrImageNeverPull`；网络受限环境可显式覆盖为同 digest 镜像代理。

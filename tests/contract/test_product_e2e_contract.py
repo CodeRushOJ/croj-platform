@@ -1,9 +1,11 @@
 import pathlib
 import json
 import re
+import stat
 import subprocess
 import tempfile
 import unittest
+import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/ci.yml"
@@ -20,6 +22,7 @@ BROWSER_LOCK = BROWSER_E2E_ROOT / "package-lock.json"
 BROWSER_CONFIG = BROWSER_E2E_ROOT / "playwright.config.js"
 BROWSER_SPEC = BROWSER_E2E_ROOT / "product.spec.js"
 BROWSER_RUNNER = ROOT / "scripts/run-browser-product-e2e.sh"
+BUNDLE_FIXTURE_BUILDER = ROOT / "tests/e2e/build-test-bundle-fixture.py"
 PRODUCT_E2E_DOC = ROOT / "docs/operations/product-e2e.md"
 README = ROOT / "README.md"
 CHANGELOG = ROOT / "CHANGELOG.md"
@@ -489,6 +492,56 @@ class ProductE2EContractTest(unittest.TestCase):
         self.assertIn("manual-public-old-title-list.json", script)
         self.assertIn("manual-public-new-title-list.json", script)
         self.assertIn("manual-admin-draft-detail.json", script)
+
+    def test_manual_test_bundle_builder_preserves_declared_paths_and_regular_modes(self):
+        self.assertTrue(BUNDLE_FIXTURE_BUILDER.is_file())
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory) / "bundle"
+            (root / "cases").mkdir(parents=True)
+            expected = {
+                "manifest.json": b'{"schemaVersion":1}\n',
+                "cases/1.in": b"20 22\n",
+                "cases/1.out": b"42\n",
+            }
+            for name, content in expected.items():
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+            archive = pathlib.Path(directory) / "bundle.zip"
+            subprocess.run(
+                [
+                    "python3",
+                    str(BUNDLE_FIXTURE_BUILDER),
+                    str(root),
+                    str(archive),
+                    *expected,
+                ],
+                check=True,
+            )
+            with zipfile.ZipFile(archive) as fixture:
+                self.assertEqual(list(expected), fixture.namelist())
+                for entry in fixture.infolist():
+                    self.assertEqual(zipfile.ZIP_DEFLATED, entry.compress_type)
+                    self.assertEqual(stat.S_IFREG, stat.S_IFMT(entry.external_attr >> 16))
+                    self.assertEqual((1980, 1, 1, 0, 0, 0), entry.date_time)
+                    self.assertEqual(expected[entry.filename], fixture.read(entry))
+            unsafe = subprocess.run(
+                [
+                    "python3",
+                    str(BUNDLE_FIXTURE_BUILDER),
+                    str(root),
+                    str(archive),
+                    "../manifest.json",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(0, unsafe.returncode)
+
+        product = PRODUCT_E2E.read_text()
+        self.assertIn('"$SCRIPT_DIR/build-test-bundle-fixture.py"', product)
+        self.assertNotIn("python3 -m zipfile -c", product)
 
     def test_product_flow_proves_headless_sandbox_discovery_on_both_workers(self):
         script = PRODUCT_E2E.read_text()

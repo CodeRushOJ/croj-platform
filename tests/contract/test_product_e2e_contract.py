@@ -569,6 +569,16 @@ class ProductE2EContractTest(unittest.TestCase):
 
     def test_external_flow_exercises_manifest_v2_oi_and_special_judge(self):
         script = PRODUCT_E2E.read_text()
+        idempotency_keys = re.findall(
+            r'--header "Idempotency-Key: ([^"]+)"',
+            script,
+        )
+        self.assertGreaterEqual(len(idempotency_keys), 6)
+        for key in idempotency_keys:
+            with self.subTest(idempotency_key=key):
+                self.assertGreaterEqual(len(key), 16)
+                self.assertLessEqual(len(key), 128)
+                self.assertTrue(all(0x21 <= ord(character) <= 0x7E for character in key))
         for fixture in ("bundle-oi", "bundle-spj"):
             self.assertIn(fixture, script)
             self.assertTrue((ROOT / "tests/e2e" / fixture).is_dir())

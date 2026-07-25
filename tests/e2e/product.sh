@@ -917,7 +917,7 @@ int main(){std::cout<<"42\n";}' \
 request_json "$run_dir/external-job-created.json" "$judge_host" POST \
   "/api/v1/judge-jobs" "$run_dir/external.headers" \
   "$run_dir/external-job-request.json" \
-  --header "Idempotency-Key: product-e2e-job"
+  --header "Idempotency-Key: product-e2e-acm-job"
 external_job_id="$(jq -er '.jobId' "$run_dir/external-job-created.json")"
 external_terminal="false"
 for _ in $(seq 1 150); do

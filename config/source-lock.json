@@ -3,28 +3,28 @@
   "sources": {
     "frontend": {
       "repository": "https://github.com/CodeRushOJ/croj-frontend.git",
-      "commit": "cc41966aec402617bf9193b849422e083dd7f3df",
+      "commit": "ecc08c7ed1aaab4a0e57d6b88ad0271555fc3dfa",
       "context": ".",
       "dockerfile": "Dockerfile",
       "image": "ghcr.io/coderushoj/croj-frontend:dev"
     },
     "backend": {
       "repository": "https://github.com/CodeRushOJ/croj-backend.git",
-      "commit": "e3337b025e83d50cf521b44315885cc3253ab37e",
+      "commit": "ffbd9584b7f5e5c5fb304b5027d140dd37a2cce9",
       "context": ".",
       "dockerfile": "Dockerfile",
       "image": "ghcr.io/coderushoj/croj-backend:dev"
     },
     "judging-server": {
       "repository": "https://github.com/CodeRushOJ/croj-judging-server.git",
-      "commit": "ab39bbcf4fb44e95f0933a535de44ac704dc1759",
+      "commit": "c38a509754971c5078aa15296f7126f6777daba3",
       "context": ".",
       "dockerfile": "Dockerfile",
       "image": "ghcr.io/coderushoj/croj-judging-server:dev"
     },
     "sandbox": {
       "repository": "https://github.com/CodeRushOJ/croj-sandbox.git",
-      "commit": "e67104312a2fc9a9302fc3c416a2bc76e417e308",
+      "commit": "f927ba0baaaf4d4100f6ba20ec0d6b68d2cd96af",
       "context": ".",
       "dockerfile": "Dockerfile",
       "image": "ghcr.io/coderushoj/croj-sandbox:dev"

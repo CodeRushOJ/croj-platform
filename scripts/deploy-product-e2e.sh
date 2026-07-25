@@ -54,7 +54,8 @@ kubectl exec --namespace "$namespace" statefulset/coderushoj-infra-mysql -- \
     case "$MYSQL_USER" in
       *[!A-Za-z0-9_.-]*|"") exit 64 ;;
     esac
-    MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --user=root --batch --skip-column-names \
+    MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql \
+      --protocol=TCP --host=127.0.0.1 --user=root --batch --skip-column-names \
       --execute="CREATE DATABASE IF NOT EXISTS coderushoj_judge CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci; GRANT ALL PRIVILEGES ON coderushoj_judge.* TO '\''$MYSQL_USER'\''@'\''%'\'';"
   '
 

@@ -385,6 +385,12 @@ class ProductE2EContractTest(unittest.TestCase):
             self.assertIn(scope, deploy)
         self.assertNotRegex(deploy.lower(), r"\bmock\b")
 
+    def test_judge_database_bootstrap_uses_mysql_tcp_not_an_image_specific_socket(self):
+        deploy = DEPLOY.read_text()
+        self.assertIn("CREATE DATABASE IF NOT EXISTS coderushoj_judge", deploy)
+        self.assertIn("--protocol=TCP", deploy)
+        self.assertIn("--host=127.0.0.1", deploy)
+
     def test_e2e_scripts_are_strict_and_parse(self):
         for path in (
             PRODUCT_E2E,

@@ -202,9 +202,11 @@ kubectl port-forward -n coderushoj service/coderushoj-infra-mailpit 8025:8025
 ```
 
 基础设施 Chart 的默认拒绝策略还会用 `mailpit.replyCIDRs` 限制 Mailpit SMTP
-响应只能返回 RFC1918 私网。若集群使用其他 Pod CIDR，必须在私有 values 中把
-该列表改为实际 Pod 网段；不要用 `0.0.0.0/0` 规避配置错误。产品 E2E 会在请求
-验证码前执行 SMTP 协议握手，因此网段配置错误会直接失败，而不会等待网关 504。
+响应只能返回参考 Kind 的精确 node/Pod 网段。若 disposable 集群使用其他网段，
+必须在私有 values 中同时改成实际 node CIDR 与 Pod CIDR；不要用整段 RFC1918
+或 `0.0.0.0/0` 规避配置错误。该兼容规则只服务本地 Mailpit，生产 profile 始终
+禁用它。产品 E2E 会在请求验证码前执行 SMTP 协议握手，因此网段配置错误会直接
+失败，而不会等待网关 504。
 
 生产 profile 不部署 Mailpit，并对空的 `backend.smtp.host`/`backend.smtp.username` fail closed。部署者必须在私有 values 中设置真实 SMTP host、port、username、auth/STARTTLS/SSL 模式，并在 `coderushoj-production-secrets` 中提供 `smtp-password`；不要把密码写入 values 或 Git。
 

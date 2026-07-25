@@ -133,3 +133,5 @@ python3 -m unittest tests.contract.test_product_e2e_contract -v
 ```
 
 如需手工复现完整流程，必须显式使用符合所有权格式的独立集群名，并确认没有同名集群。不要把示例名改成共享的 `coderushoj`，也不要跳过清理。
+网络受限环境可用 `CODERUSHOJ_E2E_NETWORK_PROBE_IMAGE` 覆盖为同一固定 digest
+的可信镜像代理地址；脚本仍使用 `IfNotPresent`，不能换成可变 tag。

@@ -21,6 +21,7 @@ readonly primary_host="coderushoj.local"
 readonly judge_host="judge.coderushoj.local"
 readonly docs_host="docs.coderushoj.local"
 readonly gateway_url="${CODERUSHOJ_E2E_GATEWAY_URL:-http://127.0.0.1:8080}"
+readonly network_probe_image="${CODERUSHOJ_E2E_NETWORK_PROBE_IMAGE:-$E2E_NETWORK_PROBE_IMAGE}"
 readonly smtp_probe_pod="coderushoj-smtp-protocol-probe"
 run_dir="$(mktemp -d "$state_root/run.XXXXXX")"
 readonly run_dir
@@ -152,8 +153,9 @@ kubectl delete pod "$smtp_probe_pod" \
 kubectl run "$smtp_probe_pod" \
   --namespace "$namespace" \
   --restart=Never \
-  --image="$E2E_NETWORK_PROBE_IMAGE" \
-  --image-pull-policy=Never \
+  --image="$network_probe_image" \
+  --image-pull-policy=IfNotPresent \
+  --overrides='{"spec":{"automountServiceAccountToken":false}}' \
   --labels="app.kubernetes.io/name=coderushoj,app.kubernetes.io/instance=coderushoj,app.kubernetes.io/component=backend" \
   --command -- \
   sh -ec '
@@ -1164,8 +1166,8 @@ sandbox_dns_addresses="$(
     --attach \
     --rm \
     --quiet \
-    --image="$E2E_NETWORK_PROBE_IMAGE" \
-    --image-pull-policy=Never \
+    --image="$network_probe_image" \
+    --image-pull-policy=IfNotPresent \
     --command -- \
     sh -ec 'getent ahostsv4 sandbox-workers | awk "{print \$1}" | sort -u'
 )"

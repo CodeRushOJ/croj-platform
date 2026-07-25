@@ -145,9 +145,14 @@ backend:
   smtp:
     host: smtp.example.com
     username: oj@example.com
+    connectionTimeoutMillis: 3000
+    readTimeoutMillis: 5000
+    writeTimeoutMillis: 5000
 ```
 
 对应键是 `images.frontend.digest`、`images.backend.digest`、`images.judgingServer.digest`、`images.sandbox.digest` 和 `images.docs.digest`。每个值都必须是 `sha256:` 加 64 位小写十六进制；示例占位符必须替换，否则 schema 会 fail closed。
+SMTP 三项超时单位均为毫秒，Chart 只接受 `100–60000`；应优先修复 SMTP
+连通性，不能用扩大 Envoy 超时掩盖邮件基础设施故障。
 
 先把环境覆盖保存为不含 Secret 的 `application-production-values.yaml`，离线渲染并通过 kubeconform，再安装：
 

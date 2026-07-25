@@ -107,10 +107,13 @@ backend:
   smtp:
     host: coderushoj-infra-mailpit
     port: 1025
-    username: coderushoj
+    username: noreply@coderushoj.local
     auth: false
     startTLS: false
     ssl: false
+    connectionTimeoutMillis: 3000
+    readTimeoutMillis: 5000
+    writeTimeoutMillis: 5000
   resources:
     requests: {cpu: 250m, memory: 512Mi}
     limits: {cpu: "2", memory: 1536Mi}

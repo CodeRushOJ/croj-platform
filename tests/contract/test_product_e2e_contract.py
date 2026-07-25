@@ -107,7 +107,16 @@ class ProductE2EContractTest(unittest.TestCase):
         product = PRODUCT_E2E.read_text()
         self.assertIn('source "$ROOT_DIR/config/versions.env"', product)
         self.assertIn('readonly smtp_probe_pod="coderushoj-smtp-protocol-probe"', product)
-        self.assertIn('--image="$E2E_NETWORK_PROBE_IMAGE"', product)
+        self.assertIn(
+            'CODERUSHOJ_E2E_NETWORK_PROBE_IMAGE:-$E2E_NETWORK_PROBE_IMAGE',
+            product,
+        )
+        self.assertIn('--image="$network_probe_image"', product)
+        self.assertIn("--image-pull-policy=IfNotPresent", product)
+        self.assertIn(
+            '\'{"spec":{"automountServiceAccountToken":false}}\'',
+            product,
+        )
         self.assertIn(
             "app.kubernetes.io/component=backend",
             product,

@@ -95,14 +95,17 @@
             },
             "smtp": {
               "type": "object",
-              "required": ["host", "port", "username", "auth", "startTLS", "ssl"],
+              "required": ["host", "port", "username", "auth", "startTLS", "ssl", "connectionTimeoutMillis", "readTimeoutMillis", "writeTimeoutMillis"],
               "properties": {
                 "host": {"type": "string"},
                 "port": {"type": "integer", "minimum": 1, "maximum": 65535},
                 "username": {"type": "string"},
                 "auth": {"type": "boolean"},
                 "startTLS": {"type": "boolean"},
-                "ssl": {"type": "boolean"}
+                "ssl": {"type": "boolean"},
+                "connectionTimeoutMillis": {"type": "integer", "minimum": 100, "maximum": 60000},
+                "readTimeoutMillis": {"type": "integer", "minimum": 100, "maximum": 60000},
+                "writeTimeoutMillis": {"type": "integer", "minimum": 100, "maximum": 60000}
               }
             }
           }

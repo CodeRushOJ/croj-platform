@@ -164,6 +164,16 @@ class ApplicationRenderTest(unittest.TestCase):
         self.assertNotIn("replace-with", rendered)
         self.assertIn("name: SMTP_HOST", rendered)
         self.assertIn('value: "coderushoj-infra-mailpit"', rendered)
+        self.assertIn(
+            'name: SMTP_USERNAME\n              value: "noreply@coderushoj.local"',
+            rendered,
+        )
+        for setting, value in (
+            ("SMTP_CONNECTION_TIMEOUT_MS", "3000"),
+            ("SMTP_READ_TIMEOUT_MS", "5000"),
+            ("SMTP_WRITE_TIMEOUT_MS", "5000"),
+        ):
+            self.assertIn(f'name: {setting}\n              value: "{value}"', rendered)
         for setting in (
             "SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH",
             "SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE",

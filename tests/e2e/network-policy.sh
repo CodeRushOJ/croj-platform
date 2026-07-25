@@ -15,6 +15,7 @@ readonly namespace="coderushoj"
 readonly cluster_name="${CODERUSHOJ_CLUSTER_NAME:-}"
 readonly probe_name="product-e2e-network-probe"
 readonly primary_url="${CODERUSHOJ_E2E_GATEWAY_URL:-http://127.0.0.1:8080}"
+readonly network_probe_image="${CODERUSHOJ_E2E_NETWORK_PROBE_IMAGE:-$E2E_NETWORK_PROBE_IMAGE}"
 
 [[ "$cluster_name" =~ ^croj-product-e2e-[0-9]+-[0-9]+$ ]] \
   || die "CODERUSHOJ_CLUSTER_NAME is not an owned product E2E cluster"
@@ -41,8 +42,8 @@ run_denied_probe() {
     --restart=Never \
     --attach \
     --rm \
-    --image="$E2E_NETWORK_PROBE_IMAGE" \
-    --image-pull-policy=Never \
+    --image="$network_probe_image" \
+    --image-pull-policy=IfNotPresent \
     --labels=app.kubernetes.io/component=network-policy-probe \
     --command -- \
     curl --silent --show-error --connect-timeout 4 "$target" >/dev/null 2>&1; then

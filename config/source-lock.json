@@ -10,7 +10,7 @@
     },
     "backend": {
       "repository": "https://github.com/CodeRushOJ/croj-backend.git",
-      "commit": "a200fa9e9f6416a647c830bb436239b70ba41313",
+      "commit": "b15482be4107c3100f82b43e6c30eac6eb9955e4",
       "context": ".",
       "dockerfile": "Dockerfile",
       "image": "ghcr.io/coderushoj/croj-backend:dev"

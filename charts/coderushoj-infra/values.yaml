@@ -8,11 +8,10 @@ applications:
 mailpit:
   enabled: true
   image: axllent/mailpit:v1.30.0
-  # NetworkPolicy must permit SMTP response packets to application pods.
-  # Keep this list aligned with the private Pod CIDRs used by the cluster.
+  # Local-only Mailpit needs return paths to Kind's exact node and Pod CIDRs.
+  # Override both entries together when the disposable cluster networks differ.
   replyCIDRs:
-    - 10.0.0.0/8
-    - 172.16.0.0/12
+    - 172.18.0.0/16
     - 192.168.0.0/16
   resources:
     requests:

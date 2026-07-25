@@ -157,7 +157,7 @@ class InfrastructureRenderTest(unittest.TestCase):
 
         self.assertNotIn("name: coderushoj-infra-allow-applications\n", rendered)
 
-    def test_mailpit_can_reply_only_within_configured_private_networks(self):
+    def test_mailpit_can_reply_only_within_configured_cluster_networks(self):
         rendered = self.render()
         policy = self.network_policy(
             rendered,
@@ -165,8 +165,10 @@ class InfrastructureRenderTest(unittest.TestCase):
         )
         self.assertIn("app.kubernetes.io/component: mailpit", policy)
         self.assertIn("policyTypes:\n    - Egress", policy)
-        for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"):
+        for cidr in ("172.18.0.0/16", "192.168.0.0/16"):
             self.assertIn(f'cidr: "{cidr}"', policy)
+        self.assertNotIn('cidr: "10.0.0.0/8"', policy)
+        self.assertNotIn('cidr: "172.16.0.0/12"', policy)
         self.assertNotIn('cidr: "0.0.0.0/0"', policy)
         self.assertNotIn('cidr: "::/0"', policy)
 

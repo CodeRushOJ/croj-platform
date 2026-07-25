@@ -21,8 +21,16 @@ IMAGES = {
     "judging-server": "ghcr.io/coderushoj/croj-judging-server:dev",
     "sandbox": "ghcr.io/coderushoj/croj-sandbox:dev",
 }
-SOURCE_FIELDS = {"repository", "commit", "context", "dockerfile", "image"}
+SOURCE_FIELDS = {
+    "repository",
+    "commit",
+    "releaseTag",
+    "context",
+    "dockerfile",
+    "image",
+}
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+RELEASE_TAG_PATTERN = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+$")
 
 
 class LockValidationError(Exception):
@@ -62,8 +70,8 @@ def validate_lock(lock_path):
     unknown_top_level = set(payload) - {"schemaVersion", "sources"}
     if unknown_top_level:
         errors.append(f"unknown top-level field(s): {', '.join(sorted(unknown_top_level))}")
-    if payload.get("schemaVersion") != 1:
-        errors.append("schemaVersion must equal 1")
+    if payload.get("schemaVersion") != 2:
+        errors.append("schemaVersion must equal 2")
 
     sources = payload.get("sources")
     if not isinstance(sources, dict):
@@ -109,6 +117,12 @@ def validate_lock(lock_path):
         commit = source.get("commit")
         if not isinstance(commit, str) or not COMMIT_PATTERN.fullmatch(commit):
             errors.append(f"{component}: commit must be a lowercase 40-character Git object ID")
+
+        release_tag = source.get("releaseTag")
+        if not isinstance(release_tag, str) or not RELEASE_TAG_PATTERN.fullmatch(
+            release_tag
+        ):
+            errors.append(f"{component}: releaseTag must be an exact v-prefixed SemVer tag")
 
         context = source.get("context")
         if not is_safe_relative_path(context):

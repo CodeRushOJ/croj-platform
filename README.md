@@ -25,7 +25,7 @@ make smoke
 
 ## 不可变跨仓库构建
 
-`config/source-lock.json` 只锁定 Frontend、Backend、Judging Server 和 Sandbox 四个外部仓库。每项只接受 CodeRushOJ 官方 HTTPS 仓库、40 位小写 Git commit、受约束的构建路径和 Chart 使用的精确 `:dev` 镜像名；branch、tag 和 `latest` 都不能作为跨仓库验收真相。Docs 不自引用旧的平台提交：开发与产品 E2E 始终从当前平台 checkout 构建 Docs 镜像，并用当前 `GITHUB_SHA`（本地为 `HEAD`）写入 OCI provenance；正式文档镜像由 release workflow 从最新 `main` 上的 annotated SemVer tag 当前 tree 构建。
+`config/source-lock.json` 只锁定 Frontend、Backend、Judging Server 和 Sandbox 四个外部仓库。source lock v2 的每项只接受 CodeRushOJ 官方 HTTPS 仓库、40 位小写 Git commit、对应的精确正式 SemVer tag、受约束的构建路径和 Chart 使用的精确 `:dev` 镜像名；branch、tag 和 `latest` 都不能替代 commit 作为跨仓库构建真相，`releaseTag` 仅用于核对并下载该 commit 的正式发布清单。Docs 不自引用旧的平台提交：开发与产品 E2E 始终从当前平台 checkout 构建 Docs 镜像，并用当前 `GITHUB_SHA`（本地为 `HEAD`）写入 OCI provenance；正式文档镜像由 release workflow 从最新 `main` 上的 annotated SemVer tag 当前 tree 构建。
 
 ```bash
 make source-verify

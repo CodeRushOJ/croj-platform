@@ -43,21 +43,29 @@ def read_json(path, description):
         raise ManifestError(f"cannot read {description} {path}: {error}") from error
 
 
-def expected_revisions(source_lock, platform_revision):
+def expected_release_inputs(source_lock, platform_revision, platform_version):
     sources = source_lock.get("sources") if isinstance(source_lock, dict) else None
     if not isinstance(sources, dict):
         raise ManifestError("source lock must contain a sources object")
     revisions = {}
+    tags = {}
     for component in COMPONENTS[:-1]:
         source = sources.get(component)
         revision = source.get("commit") if isinstance(source, dict) else None
+        tag = source.get("releaseTag") if isinstance(source, dict) else None
         if not isinstance(revision, str) or not REVISION.fullmatch(revision):
             raise ManifestError(f"source lock has no valid commit for {component}")
+        if not isinstance(tag, str) or not re.fullmatch(
+            r"^v[0-9]+\.[0-9]+\.[0-9]+$", tag
+        ):
+            raise ManifestError(f"source lock has no valid releaseTag for {component}")
         revisions[component] = revision
+        tags[component] = tag
     if not REVISION.fullmatch(platform_revision):
         raise ManifestError("platform revision must be a lowercase 40-character Git object ID")
     revisions["docs"] = platform_revision
-    return revisions
+    tags["docs"] = f"v{platform_version}"
+    return revisions, tags
 
 
 def parse_manifest_arguments(values):
@@ -76,7 +84,7 @@ def parse_manifest_arguments(values):
     return manifests
 
 
-def validate_manifest(component, path, version, revision):
+def validate_manifest(component, path, expected_tag, revision):
     payload = read_json(path, f"{component} image manifest")
     if not isinstance(payload, dict):
         raise ManifestError(f"{component}: manifest must be a JSON object")
@@ -86,8 +94,8 @@ def validate_manifest(component, path, version, revision):
         )
     if payload["repository"] != REPOSITORIES[component]:
         raise ManifestError(f"{component}: unexpected repository")
-    if payload["tag"] != f"v{version}":
-        raise ManifestError(f"{component}: tag must equal v{version}")
+    if payload["tag"] != expected_tag:
+        raise ManifestError(f"{component}: tag must equal {expected_tag}")
     if payload["revision"] != revision:
         raise ManifestError(f"{component}: revision does not match the immutable source lock")
     if not isinstance(payload["digest"], str) or not DIGEST.fullmatch(payload["digest"]):
@@ -141,15 +149,16 @@ def main():
         if not VERSION.fullmatch(args.version):
             raise ManifestError("version must be exact numeric SemVer")
         manifests = parse_manifest_arguments(args.manifest)
-        revisions = expected_revisions(
+        revisions, tags = expected_release_inputs(
             read_json(args.source_lock, "source lock"),
             args.platform_revision,
+            args.version,
         )
         images = {
             component: validate_manifest(
                 component,
                 manifests[component],
-                args.version,
+                tags[component],
                 revisions[component],
             )
             for component in COMPONENTS

@@ -31,8 +31,8 @@ CodeRushOJ 遵循 [SemVer](https://semver.org/) 和协调发布模型。各服�
 3. 从上一支持版本升级，验证 Flyway、RocketMQ 消费、对象版本、判题任务和排行榜。
 4. 完成 MySQL 与对象存储备份恢复演练，以 `SELECT 1`、业务抽样和隐藏测试对象校验恢复结果。
 5. 先合并 Frontend、Backend、Judging Server 与 Sandbox 的候选 PR，并记录四个仓库合并后真实的最新 `main` SHA。禁止把 PR head SHA 当成发布 revision；GitHub merge commit 会产生新的提交。
-6. 在上述四个真实 `main` SHA 上创建同版本 annotated tag：`git tag -a v$(cat VERSION) -m "CodeRushOJ v$(cat VERSION)"`；等待各仓双架构镜像、SBOM、OIDC provenance 和 digest JSON 全部成功。
-7. 把平台 `config/source-lock.json` 更新到四个 tag 实际指向的 40 位 SHA，更新 `VERSION`、Chart、`CHANGELOG.md` 和文档，再用这组最终发布 revision 重跑完整产品 E2E。候选分支 SHA 与 tag target 不一致时必须 fail closed。
+6. 在上述四个真实 `main` SHA 上创建各组件自己的 annotated SemVer tag；组件 tag 不要求与平台版本相同。等待各仓双架构镜像、SBOM、OIDC provenance 和 digest JSON 全部成功。
+7. 把平台 `config/source-lock.json` v2 的 `commit` 更新到四个 tag 实际指向的 40 位 SHA，并把 `releaseTag` 更新为对应组件的精确正式 tag；同时更新 `VERSION`、Chart、`CHANGELOG.md` 和文档，再用这组最终发布输入重跑完整产品 E2E。候选分支 SHA、tag target 或镜像 manifest revision 任一不一致时必须 fail closed。
 8. 合并平台 PR 后，只在平台最新 `main` 创建 annotated tag。CI 构建双架构 Docs 镜像，收集四个组件的 digest JSON，并严格核对仓库、tag、source lock revision、digest、`linux/amd64`/`linux/arm64` registry index。
 9. CI 生成 `production-images.yaml`/JSON，以 digest-only values 渲染并用 Kubeconform 校验生产 Helm，打包 Chart、render、release notes 与 SHA-256 checksums 后发布 GitHub Release。
 10. 使用 Release 的 `production-images.yaml` 部署，观察 API 错误率、队列滞后、Job 失败和数据库状态；满足观察窗口后关闭发版 Issue。

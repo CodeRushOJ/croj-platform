@@ -48,6 +48,12 @@ RELEASE_CANDIDATES = {
     "judging-server": "5d3dd65ee80d31b11582e572a1dfec0f948a0d2a",
     "sandbox": "fe2c5550bd8c2483c4d90d971aad15d1ed1f162d",
 }
+RELEASE_TAGS = {
+    "frontend": "v1.0.1",
+    "backend": "v1.0.2",
+    "judging-server": "v1.0.2",
+    "sandbox": "v1.0.2",
+}
 
 
 def run(command, **kwargs):
@@ -66,11 +72,12 @@ def make_lock(commits, path):
         sources[component] = {
             "repository": f"https://github.com/CodeRushOJ/{REPOSITORIES[component]}.git",
             "commit": commits[component],
+            "releaseTag": RELEASE_TAGS[component],
             "context": ".",
             "dockerfile": "Dockerfile",
             "image": IMAGES[component],
         }
-    path.write_text(json.dumps({"schemaVersion": 1, "sources": sources}, indent=2) + "\n")
+    path.write_text(json.dumps({"schemaVersion": 2, "sources": sources}, indent=2) + "\n")
 
 
 class SourceLockContractTest(unittest.TestCase):
@@ -112,12 +119,20 @@ class SourceLockContractTest(unittest.TestCase):
                 for component in COMPONENTS
             },
         )
+        self.assertEqual(
+            RELEASE_TAGS,
+            {
+                component: payload["sources"][component]["releaseTag"]
+                for component in COMPONENTS
+            },
+        )
 
     def test_validator_rejects_mutable_ref_unknown_fields_and_duplicate_images(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             lock = self.valid_lock(temporary_directory)
             payload = json.loads(lock.read_text())
             payload["sources"]["frontend"]["commit"] = "main"
+            payload["sources"]["frontend"]["releaseTag"] = "latest"
             payload["sources"]["backend"]["branch"] = "codex/backend-product-integration"
             payload["sources"]["sandbox"]["image"] = IMAGES["frontend"]
             lock.write_text(json.dumps(payload))
@@ -126,6 +141,7 @@ class SourceLockContractTest(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("commit", result.stderr)
+        self.assertIn("releaseTag", result.stderr)
         self.assertIn("unknown field", result.stderr)
         self.assertIn("duplicate image", result.stderr)
 

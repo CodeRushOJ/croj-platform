@@ -37,11 +37,12 @@ class TestBundleContractGateTest(unittest.TestCase):
             sources[component] = {
                 "repository": f"https://github.com/CodeRushOJ/{repository}.git",
                 "commit": commit,
+                "releaseTag": "v1.0.0",
                 "context": ".",
                 "dockerfile": "Dockerfile",
                 "image": image,
             }
-        self.lock.write_text(json.dumps({"schemaVersion": 1, "sources": sources}))
+        self.lock.write_text(json.dumps({"schemaVersion": 2, "sources": sources}))
 
         self.backend = self.sources / "backend" / self.backend_commit
         self.judging = self.sources / "judging-server" / self.judging_commit

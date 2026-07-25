@@ -225,12 +225,13 @@ jobs:
           }
 
           frontend_revision="$(jq -er '.sources.frontend.commit' config/source-lock.json)"
+          frontend_release_tag="$(jq -er '.sources.frontend.releaseTag' config/source-lock.json)"
           backend_revision="$(jq -er '.sources.backend.commit' config/source-lock.json)"
           judging_revision="$(jq -er '.sources["judging-server"].commit' config/source-lock.json)"
           sandbox_revision="$(jq -er '.sources.sandbox.commit' config/source-lock.json)"
 
           download_manifest frontend croj-frontend ci.yml \
-            "$frontend_revision" "image-artifact-$GITHUB_REF_NAME" image-artifact.json
+            "$frontend_revision" "image-artifact-$frontend_release_tag" image-artifact.json
           download_manifest backend croj-backend image.yml \
             "$backend_revision" "backend-image-$backend_revision" backend-image.json
           download_manifest judging-server croj-judging-server ci.yml \

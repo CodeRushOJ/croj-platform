@@ -7,6 +7,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "build-production-image-manifest.py"
+RELEASE_WORKFLOW = ROOT / ".github/workflows/release.yml"
 COMPONENTS = {
     "frontend": "ghcr.io/coderushoj/croj-frontend",
     "backend": "ghcr.io/coderushoj/croj-backend",
@@ -24,10 +25,19 @@ class ReleaseImageManifestTest(unittest.TestCase):
             component: str(index) * 40
             for index, component in enumerate(COMPONENTS, start=1)
         }
+        self.release_tags = {
+            "frontend": "v1.0.1",
+            "backend": "v1.0.2",
+            "judging-server": "v1.0.2",
+            "sandbox": "v1.0.2",
+        }
         lock = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "sources": {
-                component: {"commit": revision}
+                component: {
+                    "commit": revision,
+                    "releaseTag": self.release_tags[component],
+                }
                 for component, revision in self.revisions.items()
             },
         }
@@ -39,6 +49,7 @@ class ReleaseImageManifestTest(unittest.TestCase):
                 component,
                 repository,
                 self.revisions[component],
+                tag=self.release_tags[component],
             )
         self.manifests["docs"] = self.write_manifest(
             "docs",
@@ -49,10 +60,12 @@ class ReleaseImageManifestTest(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def write_manifest(self, component, repository, revision, **overrides):
+    def write_manifest(
+        self, component, repository, revision, tag="v1.0.0", **overrides
+    ):
         payload = {
             "repository": repository,
-            "tag": "v1.0.0",
+            "tag": tag,
             "revision": revision,
             "digest": "sha256:" + component.encode().hex().ljust(64, "0")[:64],
             "platforms": ["linux/amd64", "linux/arm64"],
@@ -87,6 +100,8 @@ class ReleaseImageManifestTest(unittest.TestCase):
         self.assertEqual(1, payload["schemaVersion"])
         self.assertEqual("1.0.0", payload["version"])
         self.assertEqual(self.revisions["backend"], payload["images"]["backend"]["revision"])
+        self.assertEqual("v1.0.1", payload["images"]["frontend"]["tag"])
+        self.assertEqual("v1.0.2", payload["images"]["backend"]["tag"])
         self.assertEqual(
             ["linux/amd64", "linux/arm64"],
             payload["images"]["sandbox"]["platforms"],
@@ -112,6 +127,19 @@ class ReleaseImageManifestTest(unittest.TestCase):
                 result = self.run_script()
                 self.assertNotEqual(0, result.returncode)
                 self.manifests[component].write_text(original)
+
+    def test_release_workflow_downloads_frontend_artifact_by_locked_component_tag(self):
+        workflow = RELEASE_WORKFLOW.read_text()
+        self.assertIn(
+            "frontend_release_tag=\"$(jq -er "
+            "'.sources.frontend.releaseTag' config/source-lock.json)\"",
+            workflow,
+        )
+        self.assertIn(
+            '"image-artifact-$frontend_release_tag"',
+            workflow,
+        )
+        self.assertNotIn('"image-artifact-$GITHUB_REF_NAME"', workflow)
 
 
 if __name__ == "__main__":

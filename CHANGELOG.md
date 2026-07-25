@@ -44,6 +44,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - 产品 E2E 按公告管理 API 的 `AdminPage.items` 读取版本，不再套用 MyBatis 分页的 `records` 字段而在真实公告发布前误报空数据。
 - 产品 OI 题目的不可变内存限制与复用的 TestBundle v2 fixture 保持一致，并由契约测试锁定时间、内存和总分三项，避免后端正确拒绝不兼容题包。
 - 外部异步 REST 门禁的 ACM job 幂等键满足 Judge 的 `16–128` 可见 ASCII 合同，并由回归测试统一扫描所有 E2E 幂等键。
+- 平台发布不再假设所有组件与平台共用同一 tag；source lock v2 同时锁定组件 commit 与正式 release tag，下载和校验 Frontend `v1.0.1`、Backend/Judge/Sandbox `v1.0.2` 的真实镜像清单。
 - 平台与四个组件的 release job 补齐 GitHub `attestations: write` 最小权限，避免镜像已推送但 OIDC provenance 因 API `403` 无法持久化。
 - 修复 Calico 默认拒绝出站时 Mailpit 无法向 Backend 返回 SMTP greeting、邮件接口最终被 Envoy 504 的问题；仅限本地的 Mailpit 现在只可向可配置的精确 Kind node/Pod CIDR 回包，真实 E2E 在业务请求前验证完整 SMTP `220` 协议握手。
 - Backend SMTP 连接、读取与写入增加 3s/5s/5s 默认超时和 Helm 覆盖项，裸机与容器部署同样在启动时校验 `100–60000ms` 整数范围；传输失败会在应用层有界返回，不再依赖网关超时终止请求。
@@ -79,7 +80,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Upgrade
 
-- 先合并四个组件 PR，记录 GitHub merge 后真实的最新 `main` SHA，并在这些提交创建 annotated `v1.0.0` tag；等待双架构镜像与 provenance 成功后，把平台 `source-lock.json` 更新到四个实际 tag target 并重跑最终 E2E，最后才合并和标记平台。
+- 先合并四个组件 PR，记录 GitHub merge 后真实的最新 `main` SHA，并在这些提交创建各组件自己的 annotated SemVer tag；等待双架构镜像与 provenance 成功后，把平台 source lock v2 的 `commit` 与 `releaseTag` 更新为四个实际发布输入并重跑最终 E2E，最后才合并和标记平台。
 - 使用 GitHub Release 中的 `production-images.yaml` 覆盖生产 values，先升级基础设施与 schema migration，再以 `helm upgrade --install --atomic` 升级应用。
 
 ### Rollback

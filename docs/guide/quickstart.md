@@ -100,7 +100,7 @@ helm upgrade --install coderushoj ./charts/coderushoj \
 
 ### 不可变源码与开发镜像
 
-`config/source-lock.json` 固定 frontend、backend、judging-server 和 sandbox 四个外部仓库的 40 位 commit、Dockerfile、构建上下文及精确 `:dev` 镜像名。校验器拒绝 branch/tag、外部仓库、路径穿越、未知字段、缺失组件和重复镜像。Docs 不进入源码锁，也不会从旧平台提交构建；`images-build` 直接使用当前平台 checkout，并用当前 `GITHUB_SHA`（本地为 `HEAD`）标记 Docs 镜像。平台 checkout 必须完全干净，包括 tracked、staged 和 untracked 文件；若工作树不干净，或环境中的 `GITHUB_SHA` 与 checkout 的 `HEAD` 不同，构建和加载都会 fail closed，避免给未提交内容写入错误 provenance。release workflow 从最新 `main` 的 annotated SemVer tag 构建正式文档镜像，并输出五组件 digest-only 生产清单。
+`config/source-lock.json` v2 固定 frontend、backend、judging-server 和 sandbox 四个外部仓库的 40 位 commit、对应正式 `releaseTag`、Dockerfile、构建上下文及精确 `:dev` 镜像名。校验器拒绝 branch、可变/畸形 tag、外部仓库、路径穿越、未知字段、缺失组件和重复镜像；checkout 和开发构建仍只认 commit，正式发布才用 `releaseTag` 定位并复核该 commit 的镜像清单。Docs 不进入源码锁，也不会从旧平台提交构建；`images-build` 直接使用当前平台 checkout，并用当前 `GITHUB_SHA`（本地为 `HEAD`）标记 Docs 镜像。平台 checkout 必须完全干净，包括 tracked、staged 和 untracked 文件；若工作树不干净，或环境中的 `GITHUB_SHA` 与 checkout 的 `HEAD` 不同，构建和加载都会 fail closed，避免给未提交内容写入错误 provenance。release workflow 从最新 `main` 的 annotated SemVer tag 构建正式文档镜像，并输出五组件 digest-only 生产清单。
 
 ```bash
 make source-verify
@@ -138,7 +138,7 @@ make images-load
 CODERUSHOJ_CLUSTER_NAME=my-cluster make images-load
 ```
 
-任一组件（包括后端和判题服务）的最终集成提交准备好后，只把对应 `commit` 更新为经评审且可从官方仓库 fetch 的 40 位对象 ID，然后依次运行 `make source-verify`、`make source-checkout`、`make test-bundle-contract`、`make images-build`。锁文件的 PR diff 是版本变更的审计记录；不要增加 branch 字段，也不要用可变 tag 替代 commit。该契约门禁只证明隐藏测试包兼容，完整业务闭环仍必须通过 Kind 端到端验收。
+任一组件（包括后端和判题服务）的最终集成提交准备好后，把对应 `commit` 更新为经评审且可从官方仓库 fetch 的 40 位对象 ID，并把 `releaseTag` 更新为实际指向该提交且已产生正式镜像清单的 SemVer tag，然后依次运行 `make source-verify`、`make source-checkout`、`make test-bundle-contract`、`make images-build`。锁文件的 PR diff 是版本变更的审计记录；不要增加 branch 字段，也不要用 tag 替代 commit。该契约门禁只证明隐藏测试包兼容，完整业务闭环仍必须通过 Kind 端到端验收。
 
 CI 的 `platform-product-e2e` job 会构建上述四个锁定组件镜像和当前 workflow checkout 的 Docs 镜像，在自己命名的三节点 disposable Kind 集群中运行登录、FPS 导入、TestBundle、产品提交、外部异步判题、公告、题目讨论、题解、比赛、邮件和 NetworkPolicy 的真实闭环。完整信任边界、一次性管理员 bootstrap 和安全清理规则见[三节点产品 E2E](../operations/product-e2e.md)。
 

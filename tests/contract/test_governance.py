@@ -13,6 +13,13 @@ class GovernanceContractTest(unittest.TestCase):
         self.assertTrue(path.is_file(), f"missing governance file: {relative_path}")
         return path.read_text()
 
+    def workflow_action_refs(self, workflow_path):
+        return re.findall(
+            r"""^\s*(?:-\s*)?uses:\s*['"]?([^'"\s#]+)['"]?\s*(?:#.*)?$""",
+            workflow_path.read_text(),
+            flags=re.MULTILINE,
+        )
+
     def test_issue_forms_capture_delivery_evidence(self):
         for name in ("epic.yml", "feature.yml", "bug.yml", "docs.yml"):
             form = self.read(f".github/ISSUE_TEMPLATE/{name}")
@@ -143,20 +150,38 @@ class GovernanceContractTest(unittest.TestCase):
 
     def test_v1_release_version_and_notes_match_shipped_platform(self):
         version = (ROOT / "VERSION").read_text().strip()
-        self.assertEqual("1.0.0", version)
+        self.assertEqual("1.0.1", version)
         for chart in ("charts/coderushoj/Chart.yaml", "charts/coderushoj-infra/Chart.yaml"):
             manifest = self.read(chart)
-            self.assertIn("version: 1.0.0", manifest)
-            self.assertIn('appVersion: "1.0.0"', manifest)
+            self.assertIn(f"version: {version}", manifest)
+            self.assertIn(f'appVersion: "{version}"', manifest)
 
         changelog = self.read("CHANGELOG.md")
-        unreleased = changelog.split("## [Unreleased]", 1)[1].split("## [1.0.0]", 1)[0]
+        release_heading = f"## [{version}] - 2026-07-25"
+        unreleased = changelog.split("## [Unreleased]", 1)[1].split(
+            release_heading, 1
+        )[0]
         for section in ("Features", "Fixes", "Security", "Operations"):
             self.assertIn(f"### {section}", unreleased)
         self.assertNotIn("TBD", unreleased)
         self.assertNotIn("TODO", unreleased)
-        self.assertIn("## [1.0.0] - 2026-07-25", changelog)
-        release = changelog.split("## [1.0.0] - 2026-07-25", 1)[1].split("\n## [", 1)[0]
+        self.assertIn(release_heading, changelog)
+        release = changelog.split(release_heading, 1)[1].split("\n## [", 1)[0]
+        for section in (
+            "Features",
+            "Fixes",
+            "Security",
+            "Migrations",
+            "Operations",
+            "Known Limitations",
+            "Upgrade",
+            "Rollback",
+        ):
+            self.assertIn(f"### {section}", release)
+        self.assertIn("actions/setup-python", release)
+        prior_release = changelog.split("## [1.0.0] - 2026-07-25", 1)[1].split(
+            "\n## [", 1
+        )[0]
         for shipped_fact in (
             "source-lock.json",
             "Mailpit",
@@ -165,29 +190,40 @@ class GovernanceContractTest(unittest.TestCase):
             "NetworkPolicy",
             "production-images.yaml",
         ):
-            self.assertIn(shipped_fact, release)
+            self.assertIn(shipped_fact, prior_release)
 
     def test_third_party_actions_are_commit_pinned(self):
-        for relative_path in (".github/workflows/ci.yml", ".github/workflows/release.yml"):
-            workflow = self.read(relative_path)
-            for action_ref in re.findall(r"uses:\s+([^\s#]+)", workflow):
-                if action_ref.startswith("./"):
+        workflow_paths = sorted((GITHUB / "workflows").glob("*.yml")) + sorted(
+            (GITHUB / "workflows").glob("*.yaml")
+        )
+        self.assertTrue(workflow_paths)
+        external_actions = 0
+        for workflow_path in workflow_paths:
+            for action_ref in self.workflow_action_refs(workflow_path):
+                if action_ref.startswith("./") or action_ref.startswith("docker://"):
                     continue
+                external_actions += 1
                 self.assertRegex(
                     action_ref,
                     r"^[^@]+@[0-9a-f]{40}$",
-                    f"action must be pinned to a full commit SHA: {action_ref}",
+                    (
+                        "action must be pinned to a full commit SHA in "
+                        f"{workflow_path.name}: {action_ref}"
+                    ),
                 )
+        self.assertGreater(external_actions, 0)
 
     def test_shared_actions_use_one_verified_revision_across_workflows(self):
         revisions = {}
-        for workflow_path in sorted((GITHUB / "workflows").glob("*.yml")):
-            workflow = workflow_path.read_text()
-            for action_ref in re.findall(r"uses:\s+([^\s#]+)", workflow):
+        workflow_paths = sorted((GITHUB / "workflows").glob("*.yml")) + sorted(
+            (GITHUB / "workflows").glob("*.yaml")
+        )
+        for workflow_path in workflow_paths:
+            for action_ref in self.workflow_action_refs(workflow_path):
                 if action_ref.startswith("./") or action_ref.startswith("docker://"):
                     continue
                 action, revision = action_ref.rsplit("@", 1)
-                revisions.setdefault(action, {}).setdefault(revision, []).append(
+                revisions.setdefault(action.lower(), {}).setdefault(revision, []).append(
                     workflow_path.name
                 )
 

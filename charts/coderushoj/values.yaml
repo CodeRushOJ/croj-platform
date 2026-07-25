@@ -71,7 +71,7 @@ images:
     pullPolicy: IfNotPresent
   docs:
     repository: ghcr.io/coderushoj/coderushoj-docs
-    tag: v1.0.0
+    tag: v1.0.1
     digest: ""
     pullPolicy: IfNotPresent
 

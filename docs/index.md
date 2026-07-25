@@ -36,7 +36,7 @@ features:
 
 ## 当前状态
 
-平台 `1.0.0` 已完成三节点 Kind 上前端、后端、Judge、Sandbox、MySQL、Redis、RocketMQ、SeaweedFS、Mailpit 与真实浏览器/判题闭环，并保留跨仓独立迭代和不可变源码锁。
+平台 `1.0.1` 已完成三节点 Kind 上前端、后端、Judge、Sandbox、MySQL、Redis、RocketMQ、SeaweedFS、Mailpit 与真实浏览器/判题闭环，并保留跨仓独立迭代和不可变源码锁。
 
 ::: warning 生产边界
 仓库内有状态依赖适合本机和参考部署；高可用生产应使用托管数据服务，并从 GitHub Release 的 digest-only 清单部署应用镜像。

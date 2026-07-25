@@ -24,6 +24,41 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - 后续部署、监控与回滚变化将记录在本节。
 
+## [1.0.1] - 2026-07-25
+
+### Features
+
+- 保持 `1.0.0` 的完整 OJ 功能、Kubernetes 原生 Sandbox 发现、异步 REST Judge 接入和跨仓不可变组件锁，不引入运行时行为变更。
+
+### Fixes
+
+- 发布工作流改用已在主干 CI 验证的 `actions/setup-python` 不可变 revision，修复首次 `v1.0.0` 发布尝试在 GitHub Actions job setup 阶段无法解析 Action、因而没有生成 Release 或制品的问题。
+- 新增跨 `.yml`/`.yaml` 工作流的治理契约：所有外部 GitHub Action 必须固定到完整 40 位 SHA，同一 Action 的大小写与引号写法规范化后只能使用一个已验证 revision。
+
+### Security
+
+- 继续对第三方 GitHub Action 使用 commit pin，并阻止 CI 与 Release 工作流悄然漂移到不同供应链输入。
+
+### Migrations
+
+- 无数据库、对象存储或 Judge schema 迁移；`1.0.0` 的 Flyway V1–V13 与 Judge schema 保持不变。
+
+### Operations
+
+- 保留失败的 annotated `v1.0.0` 标签作为审计记录，不移动或删除公开标签；该标签没有对应 GitHub Release 或部署制品。正式发布从通过完整主干门禁的 `v1.0.1` 开始。
+
+### Known Limitations
+
+- Chart 内有状态依赖仍面向本机、测试和参考部署；高可用生产应使用托管 MySQL、Redis、RocketMQ 与 S3 兼容对象存储。
+
+### Upgrade
+
+- 已部署候选环境无需数据迁移；使用 `v1.0.1` Release 附带的 digest-only `production-images.yaml` 和 Chart 包执行 `helm upgrade --install --atomic`。
+
+### Rollback
+
+- `v1.0.0` 未产生可部署 Release 制品，不应作为回滚目标；使用 `v1.0.1` 的固定 digest 保持可重复部署，应用回滚使用先前成功的 Helm revision。
+
 ## [1.0.0] - 2026-07-25
 
 ### Features

@@ -75,7 +75,7 @@ class ReleaseImageManifestTest(unittest.TestCase):
         path.write_text(json.dumps(payload))
         return path
 
-    def run_script(self):
+    def run_script(self, *, components_only=False):
         command = [
             "python3",
             str(SCRIPT),
@@ -88,7 +88,11 @@ class ReleaseImageManifestTest(unittest.TestCase):
             "--output-directory",
             str(self.output),
         ]
+        if components_only:
+            command.append("--components-only")
         for component, path in self.manifests.items():
+            if components_only and component == "docs":
+                continue
             command.extend(["--manifest", f"{component}={path}"])
         return subprocess.run(command, text=True, capture_output=True, check=False)
 
@@ -128,7 +132,16 @@ class ReleaseImageManifestTest(unittest.TestCase):
                 self.assertNotEqual(0, result.returncode)
                 self.manifests[component].write_text(original)
 
-    def test_release_workflow_downloads_frontend_artifact_by_locked_component_tag(self):
+    def test_validates_components_before_the_documentation_image_exists(self):
+        result = self.run_script(components_only=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+
+        payload = json.loads((self.output / "component-images.json").read_text())
+        self.assertEqual(set(COMPONENTS), set(payload["images"]))
+        self.assertNotIn("docs", payload["images"])
+        self.assertFalse((self.output / "production-images.yaml").exists())
+
+    def test_release_downloads_public_release_assets_before_registry_mutation(self):
         workflow = RELEASE_WORKFLOW.read_text()
         self.assertIn(
             "frontend_release_tag=\"$(jq -er "
@@ -136,10 +149,33 @@ class ReleaseImageManifestTest(unittest.TestCase):
             workflow,
         )
         self.assertIn(
-            '"image-artifact-$frontend_release_tag"',
+            '"https://github.com/CodeRushOJ/croj-frontend/releases/download/'
+            '$frontend_release_tag/image-artifact.json"',
             workflow,
         )
-        self.assertNotIn('"image-artifact-$GITHUB_REF_NAME"', workflow)
+        self.assertNotIn("gh run download", workflow)
+        download = workflow.index("Download the four public component release manifests")
+        validate = workflow.index("Validate immutable component inputs before publication")
+        registry = workflow.index("Verify component registry indexes before publication")
+        publish_docs = workflow.index(
+            "Build and publish staged multi-architecture documentation image"
+        )
+        promote_docs = workflow.index("Publish verified documentation version tag")
+        publish_release = workflow.index("Publish GitHub Release")
+        self.assertLess(download, validate)
+        self.assertLess(validate, registry)
+        self.assertLess(registry, publish_docs)
+        self.assertLess(publish_docs, promote_docs)
+        self.assertLess(promote_docs, publish_release)
+        self.assertIn(
+            "${{ env.DOCS_IMAGE }}:sha-${{ github.sha }}",
+            workflow,
+        )
+        staged_build = workflow[publish_docs:promote_docs]
+        self.assertNotIn(
+            "${{ env.DOCS_IMAGE }}:${{ github.ref_name }}",
+            staged_build,
+        )
 
 
 if __name__ == "__main__":

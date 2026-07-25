@@ -68,18 +68,19 @@ def expected_release_inputs(source_lock, platform_revision, platform_version):
     return revisions, tags
 
 
-def parse_manifest_arguments(values):
+def parse_manifest_arguments(values, expected_components=COMPONENTS):
     manifests = {}
     for value in values:
         component, separator, raw_path = value.partition("=")
-        if not separator or component not in COMPONENTS or not raw_path:
+        if not separator or component not in expected_components or not raw_path:
             raise ManifestError(f"invalid --manifest value: {value}")
         if component in manifests:
             raise ManifestError(f"duplicate manifest for {component}")
         manifests[component] = pathlib.Path(raw_path)
-    if set(manifests) != set(COMPONENTS):
+    if set(manifests) != set(expected_components):
         raise ManifestError(
-            f"manifest set mismatch: expected {list(COMPONENTS)}, got {sorted(manifests)}"
+            "manifest set mismatch: "
+            f"expected {list(expected_components)}, got {sorted(manifests)}"
         )
     return manifests
 
@@ -133,6 +134,18 @@ def write_outputs(output_directory, version, images):
     )
 
 
+def write_component_preflight(output_directory, version, images):
+    output_directory.mkdir(parents=True, exist_ok=True)
+    (output_directory / "component-images.json").write_text(
+        json.dumps(
+            {"schemaVersion": 1, "version": version, "images": images},
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", required=True)
@@ -140,6 +153,11 @@ def parse_args():
     parser.add_argument("--platform-revision", required=True)
     parser.add_argument("--manifest", action="append", default=[])
     parser.add_argument("--output-directory", required=True, type=pathlib.Path)
+    parser.add_argument(
+        "--components-only",
+        action="store_true",
+        help="validate the four locked external components before the docs image exists",
+    )
     return parser.parse_args()
 
 
@@ -148,7 +166,8 @@ def main():
     try:
         if not VERSION.fullmatch(args.version):
             raise ManifestError("version must be exact numeric SemVer")
-        manifests = parse_manifest_arguments(args.manifest)
+        expected_components = COMPONENTS[:-1] if args.components_only else COMPONENTS
+        manifests = parse_manifest_arguments(args.manifest, expected_components)
         revisions, tags = expected_release_inputs(
             read_json(args.source_lock, "source lock"),
             args.platform_revision,
@@ -161,9 +180,12 @@ def main():
                 tags[component],
                 revisions[component],
             )
-            for component in COMPONENTS
+            for component in expected_components
         }
-        write_outputs(args.output_directory, args.version, images)
+        if args.components_only:
+            write_component_preflight(args.output_directory, args.version, images)
+        else:
+            write_outputs(args.output_directory, args.version, images)
     except ManifestError as error:
         print(f"release image manifest validation failed: {error}", file=sys.stderr)
         return 1

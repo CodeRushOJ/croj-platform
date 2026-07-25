@@ -243,9 +243,25 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
     def test_release_waits_for_the_real_main_product_gate_before_mutation(self):
         workflow = RELEASE_WORKFLOW.read_text()
         preflight = workflow.index("Verify successful main CI and real product E2E")
+        component_download = workflow.index(
+            "Download the four public component release manifests"
+        )
+        component_validation = workflow.index(
+            "Validate immutable component inputs before publication"
+        )
+        component_registry = workflow.index(
+            "Verify component registry indexes before publication"
+        )
+        docs_publish = workflow.index(
+            "Build and publish staged multi-architecture documentation image"
+        )
         login = workflow.index("Log in to GHCR")
         publish = workflow.index("Publish GitHub Release")
 
+        self.assertLess(preflight, component_download)
+        self.assertLess(component_download, component_validation)
+        self.assertLess(component_validation, component_registry)
+        self.assertLess(component_registry, docs_publish)
         self.assertLess(preflight, login)
         self.assertLess(preflight, publish)
         self.assertIn("scripts/verify-main-ci.py", workflow)

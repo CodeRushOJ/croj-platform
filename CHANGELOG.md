@@ -33,11 +33,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Fixes
 
 - Release job 在执行 `make validate` 前显式运行 `corepack enable` 并按 lockfile 安装文档依赖，确保文档链接契约调用固定版本 `pnpm` 和 VitePress 时工具链已存在；修复 `v1.0.1` 在全部版本、标签、main 与真实产品 E2E 预检通过后，因 `FileNotFoundError: pnpm` 停在静态门禁的问题。
-- 新增发布工作流顺序契约，强制 package-manager provisioning 与锁定依赖安装都发生在完整静态发布门禁之前。
+- 新增发布工作流顺序契约，强制先完成 tag/main 与主干 E2E 信任预检，再执行 package-manager provisioning 和限定于 `docs` 的锁定依赖安装，最后才运行完整静态发布门禁；不可信标签不能先执行仓库控制的 package lifecycle。
+- 四个组件的镜像清单改从其不可变公开 GitHub Release 资产下载，不再错误地使用仅限平台仓库的 `GITHUB_TOKEN` 读取跨仓 Actions artifact；清单字段、源码锁 revision/tag 和四个 GHCR 双架构索引均在首次推送前验证。
+- Docs 镜像先仅发布 commit-addressed `sha-<revision>` staging tag；全部生产 values、registry、Helm/Kubeconform 与 checksums 验证完成后才创建 SemVer 镜像 tag，避免前置失败留下看似正式但没有 Release 的部分版本。
 
 ### Security
 
-- pnpm 继续由仓库 `packageManager` 与 lockfile 固定版本，Release 不依赖 runner 上未声明的全局包管理器。
+- pnpm 继续由仓库 `packageManager` 与 lockfile 固定版本，Release 不依赖 runner 上未声明的全局包管理器；跨仓输入通过公开 Release 资产读取，无需扩大平台 token 到其他仓库的 Actions 权限。
 
 ### Migrations
 

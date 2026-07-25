@@ -108,20 +108,45 @@ class GovernanceContractTest(unittest.TestCase):
         self.assertIn("tags:", workflow)
         self.assertIn("'v*'", workflow)
         self.assertIn("VERSION", workflow)
+        setup_node_position = workflow.index("- name: Set up Node.js")
+        tag_preflight_position = workflow.index(
+            "- name: Verify version, annotated tag, latest main, charts, and changelog"
+        )
+        main_preflight_position = workflow.index(
+            "- name: Verify successful main CI and real product E2E"
+        )
         corepack_position = workflow.index("corepack enable")
-        dependency_install_position = workflow.index("pnpm install --frozen-lockfile")
+        dependency_step_position = workflow.index(
+            "- name: Install locked documentation dependencies"
+        )
+        dependency_install_position = workflow.index(
+            "pnpm install --frozen-lockfile", dependency_step_position
+        )
         static_gate_position = workflow.index(
             "- name: Run the complete static release gate"
         )
         self.assertLess(
-            corepack_position,
-            static_gate_position,
-            "pnpm must be provisioned before make validate invokes the docs build",
+            setup_node_position,
+            tag_preflight_position,
         )
         self.assertLess(
-            dependency_install_position,
-            static_gate_position,
-            "locked docs dependencies must exist before make validate invokes pnpm build",
+            tag_preflight_position,
+            main_preflight_position,
+        )
+        self.assertLess(
+            main_preflight_position,
+            corepack_position,
+            "tagged repository code must not execute before both trust preflights",
+        )
+        self.assertLess(corepack_position, dependency_step_position)
+        self.assertLess(dependency_install_position, static_gate_position)
+        dependency_block = workflow[
+            dependency_step_position:static_gate_position
+        ]
+        self.assertIn(
+            "working-directory: docs",
+            dependency_block,
+            "the frozen install must remain scoped to the docs package",
         )
         self.assertIn("CHANGELOG.md", workflow)
         self.assertIn("helm package", workflow)
@@ -159,7 +184,7 @@ class GovernanceContractTest(unittest.TestCase):
         docs_image = docs_images.split("  docs:", 1)[1]
         self.assertIn(f"tag: v{version}", docs_image)
         self.assertIn(
-            "${{ env.DOCS_IMAGE }}:${{ github.ref_name }}",
+            '"$DOCS_IMAGE:$GITHUB_REF_NAME"',
             workflow,
         )
 

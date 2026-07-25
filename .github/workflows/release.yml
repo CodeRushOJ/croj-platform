@@ -40,13 +40,6 @@ jobs:
         with:
           node-version: '24.15.0'
 
-      - name: Enable the pinned pnpm package manager
-        run: corepack enable
-
-      - name: Install locked documentation dependencies
-        working-directory: docs
-        run: pnpm install --frozen-lockfile
-
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.0.0
         with:
@@ -95,6 +88,13 @@ jobs:
             --timeout-seconds 5400 \
             --poll-interval-seconds 20
 
+      - name: Enable the pinned pnpm package manager
+        run: corepack enable
+
+      - name: Install locked documentation dependencies
+        working-directory: docs
+        run: pnpm install --frozen-lockfile
+
       - name: Run the complete static release gate
         run: make validate
 
@@ -119,12 +119,61 @@ jobs:
           ' CHANGELOG.md > dist/release-notes.md
           test -s dist/release-notes.md
 
-      - name: Log in to GHCR
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.0.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
+      - name: Download the four public component release manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          download_manifest() {
+            local url="$1"
+            local output="$2"
+            mkdir -p "$(dirname "$output")"
+            curl \
+              --proto '=https' \
+              --tlsv1.2 \
+              --fail \
+              --silent \
+              --show-error \
+              --location \
+              --retry 3 \
+              --retry-all-errors \
+              --output "$output" \
+              "$url"
+            test -s "$output"
+          }
+
+          frontend_release_tag="$(jq -er '.sources.frontend.releaseTag' config/source-lock.json)"
+          backend_release_tag="$(jq -er '.sources.backend.releaseTag' config/source-lock.json)"
+          judging_release_tag="$(jq -er '.sources["judging-server"].releaseTag' config/source-lock.json)"
+          sandbox_release_tag="$(jq -er '.sources.sandbox.releaseTag' config/source-lock.json)"
+
+          download_manifest \
+            "https://github.com/CodeRushOJ/croj-frontend/releases/download/$frontend_release_tag/image-artifact.json" \
+            dist/component-images/frontend/image-artifact.json
+          download_manifest \
+            "https://github.com/CodeRushOJ/croj-backend/releases/download/$backend_release_tag/backend-image.json" \
+            dist/component-images/backend/backend-image.json
+          download_manifest \
+            "https://github.com/CodeRushOJ/croj-judging-server/releases/download/$judging_release_tag/judging-server-image.json" \
+            dist/component-images/judging-server/judging-server-image.json
+          download_manifest \
+            "https://github.com/CodeRushOJ/croj-sandbox/releases/download/$sandbox_release_tag/sandbox-image.json" \
+            dist/component-images/sandbox/sandbox-image.json
+
+      - name: Validate immutable component inputs before publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/build-production-image-manifest.py \
+            --components-only \
+            --version "$(tr -d '\r\n' < VERSION)" \
+            --source-lock config/source-lock.json \
+            --platform-revision "$GITHUB_SHA" \
+            --manifest frontend=dist/component-images/frontend/image-artifact.json \
+            --manifest backend=dist/component-images/backend/backend-image.json \
+            --manifest judging-server=dist/component-images/judging-server/judging-server-image.json \
+            --manifest sandbox=dist/component-images/sandbox/sandbox-image.json \
+            --output-directory dist/preflight
 
       - name: Set up QEMU for cross-architecture builds
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
@@ -132,7 +181,30 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.11.1
 
-      - name: Build and publish multi-architecture documentation image
+      - name: Verify component registry indexes before publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          for component in frontend backend judging-server sandbox; do
+            repository="$(jq -er --arg component "$component" '.images[$component].repository' dist/preflight/component-images.json)"
+            digest="$(jq -er --arg component "$component" '.images[$component].digest' dist/preflight/component-images.json)"
+            docker buildx imagetools inspect --raw "$repository@$digest" |
+              jq -e '
+                [.manifests[] |
+                  select(.platform.os != "unknown") |
+                  (.platform.os + "/" + .platform.architecture)] |
+                sort == ["linux/amd64", "linux/arm64"]
+              ' >/dev/null
+          done
+
+      - name: Log in to GHCR
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.0.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and publish staged multi-architecture documentation image
         id: push
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.18.0
         with:
@@ -140,9 +212,7 @@ jobs:
           file: docs/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            ${{ env.DOCS_IMAGE }}:${{ github.ref_name }}
-            ${{ env.DOCS_IMAGE }}:sha-${{ github.sha }}
+          tags: ${{ env.DOCS_IMAGE }}:sha-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -173,75 +243,6 @@ jobs:
             --argjson platforms '["linux/amd64","linux/arm64"]' \
             '{repository:$repository,tag:$tag,revision:$revision,digest:$digest,platforms:$platforms}' \
             > dist/docs-image.json
-
-      - name: Download the four component release manifests
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p dist/component-images
-
-          download_manifest() {
-            local component="$1"
-            local repository="$2"
-            local workflow="$3"
-            local revision="$4"
-            local artifact="$5"
-            local output="$6"
-            local response candidate run_id download_directory
-            local -a candidates=()
-            local -a matching_runs=()
-
-            response="$(gh api -X GET \
-              "repos/CodeRushOJ/$repository/actions/workflows/$workflow/runs" \
-              -f event=push \
-              -f status=completed \
-              -f per_page=100)"
-            mapfile -t candidates < <(jq -r \
-              --arg revision "$revision" \
-              '[.workflow_runs[] |
-                select(.head_sha == $revision and .conclusion == "success") |
-                .id] | .[]' <<<"$response")
-            for candidate in "${candidates[@]}"; do
-              if gh api -X GET \
-                "repos/CodeRushOJ/$repository/actions/runs/$candidate/artifacts" \
-                -f per_page=100 |
-                jq -e --arg artifact "$artifact" \
-                  'any(.artifacts[]; .name == $artifact and (.expired | not))' \
-                  >/dev/null; then
-                matching_runs+=("$candidate")
-              fi
-            done
-            if ((${#matching_runs[@]} != 1)); then
-              printf 'Expected one non-expired %s artifact for %s@%s, found %d\n' \
-                "$artifact" "$repository" "$revision" "${#matching_runs[@]}" >&2
-              return 1
-            fi
-            run_id="${matching_runs[0]}"
-            download_directory="dist/component-images/$component"
-            mkdir -p "$download_directory"
-            gh run download "$run_id" \
-              --repo "CodeRushOJ/$repository" \
-              --name "$artifact" \
-              --dir "$download_directory"
-            test -f "$download_directory/$output"
-          }
-
-          frontend_revision="$(jq -er '.sources.frontend.commit' config/source-lock.json)"
-          frontend_release_tag="$(jq -er '.sources.frontend.releaseTag' config/source-lock.json)"
-          backend_revision="$(jq -er '.sources.backend.commit' config/source-lock.json)"
-          judging_revision="$(jq -er '.sources["judging-server"].commit' config/source-lock.json)"
-          sandbox_revision="$(jq -er '.sources.sandbox.commit' config/source-lock.json)"
-
-          download_manifest frontend croj-frontend ci.yml \
-            "$frontend_revision" "image-artifact-$frontend_release_tag" image-artifact.json
-          download_manifest backend croj-backend image.yml \
-            "$backend_revision" "backend-image-$backend_revision" backend-image.json
-          download_manifest judging-server croj-judging-server ci.yml \
-            "$judging_revision" "judging-server-image-$judging_revision" judging-server-image.json
-          download_manifest sandbox croj-sandbox ci.yml \
-            "$sandbox_revision" "sandbox-image-$sandbox_revision" sandbox-image.json
 
       - name: Validate and assemble digest-only production image values
         shell: bash
@@ -301,6 +302,21 @@ jobs:
             xargs -0 sha256sum > "$checksums"
           mv "$checksums" SHA256SUMS
           test -s SHA256SUMS
+
+      - name: Publish verified documentation version tag
+        env:
+          IMAGE_DIGEST: ${{ steps.push.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            --tag "$DOCS_IMAGE:$GITHUB_REF_NAME" \
+            "$DOCS_IMAGE@$IMAGE_DIGEST"
+          published_digest="$(
+            docker buildx imagetools inspect "$DOCS_IMAGE:$GITHUB_REF_NAME" |
+              awk '$1 == "Digest:" {print $2; exit}'
+          )"
+          test "$published_digest" = "$IMAGE_DIGEST"
 
       - name: Publish GitHub Release
         env:

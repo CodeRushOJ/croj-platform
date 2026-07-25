@@ -26,9 +26,40 @@
 
 Webhook 不通过放宽 SSRF 或私网地址保护在此集群内回调。它继续由 Judging 仓库的注入 DNS/TLS MySQL integration gate 覆盖。
 
+## 真实浏览器验收
+
+API 流完成数据准备后，`scripts/run-browser-product-e2e.sh` 在同一个 owned
+cluster 上启动固定版本 Playwright/Chromium。Chromium 通过 host resolver 将
+`coderushoj.local` 指向 runner 回环地址，所有页面、静态资源和 `/api` 请求仍经过
+实际 Envoy Gateway、Frontend 和 Backend；测试不启动 `webServer`，也不拦截或
+伪造网络响应。
+
+浏览器旅程使用可访问性 role、label 和稳定的可见状态，覆盖：
+
+1. 打开真实登录页，等待 `/api/captcha` 返回 `Captcha-Key`，从 disposable
+   集群的真实 Redis 读取该验证码并填入表单，再等待真实 `/api/user/login`
+   成功。它复用 API 流已有的 white-box anti-bot 夹具，不注入 token、不改
+   localStorage 认证状态，也不跳过路由守卫。
+2. 从题目列表搜索 `A+B Problem` 并进入详情，分别查看题目关联讨论和题解。
+3. 打开 Monaco 提交代码页，输入正确 C++，调用真实提交接口，并由前端自己的
+   轮询逻辑等待终态 `ACCEPTED`；测试代码不使用固定 `sleep`。
+4. 从公告列表进入公告详情并验证正文，再从竞赛列表进入公开比赛详情，查看其
+   编排的不可变题目。
+5. 进入管理工作台，验证“题目导入”的文件入口和“测试包管理”的题目 ID
+   入口可发现。题目包发布和 TestBundle 上传/发布的完整写操作继续由前置 API
+   流覆盖，避免 UI 验收重复制造题目版本。
+
+Playwright 固定为 lockfile 中的精确版本，Node.js 与 Chromium 安装步骤都有独立
+CI timeout，npm 下载缓存按 `package-lock.json` 建键。浏览器项目只运行一个
+worker，整个 journey 有全局上限；GitHub Actions 的并发组启用
+`cancel-in-progress`，集群删除仍位于 `always()` 路径。
+
 ## 失败诊断和安全清理
 
-失败时只调用受限诊断采集器：不读取 Secret，不抓取应用日志，不保存验证码、JWT、API key、源代码或隐藏测试内容。artifact 只包含节点/Pod 元数据、事件、describe 和 Helm 状态，保留 14 天。产品流的请求/响应临时目录与 Mailpit port-forward 在脚本退出时删除。
+失败时先调用受限集群诊断采集器：不读取 Secret，不抓取应用日志，不保存验证码、JWT、API key、源代码或隐藏测试内容。集群诊断 artifact 只包含节点/Pod 元数据、事件、describe 和 Helm 状态。浏览器失败另保留 Playwright `trace`、`screenshot`、`video` 和 HTML report 到 `artifacts/product-e2e-browser/`，便于还原真实页面和网络时序。浏览器证据可能包含本次 disposable run 的页面与请求数据，应按敏感 CI 证据限制访问；CI 在上传前删除 owned cluster，使临时管理员凭据和会话失效。两类 artifact 都保留 14 天。
+
+产品流的请求/响应临时目录与 Mailpit port-forward 在脚本退出时删除。浏览器 runner
+只读取权限为 `0600` 的 bootstrap 用户名和密码文件，不复制它们到平台日志。
 
 清理脚本拒绝 `coderushoj`、空字符串和任意非 `croj-product-e2e-<数字>-<数字>` 名称。即使 checkout、构建、集群创建、部署或验收失败，`always()` 步骤也只按本次 run 生成的精确名称调用 Kind。
 
@@ -39,6 +70,8 @@ Webhook 不通过放宽 SSRF 或私网地址保护在此集群内回调。它继
 ```bash
 actionlint
 shellcheck scripts/*.sh tests/e2e/*.sh
+node --check tests/e2e/browser/playwright.config.js
+node --check tests/e2e/browser/product.spec.js
 helm lint charts/coderushoj
 helm lint charts/coderushoj-infra
 python3 -m unittest tests.contract.test_product_e2e_contract -v

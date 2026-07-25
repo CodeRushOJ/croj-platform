@@ -156,10 +156,25 @@ jobs:
   platform-product-e2e:
     name: Real three-node Kind product E2E
     runs-on: ubuntu-24.04
-    timeout-minutes: 65
+    timeout-minutes: 75
     steps:
       - name: Check out platform repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Node.js for browser product E2E
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.15.0'
+          cache: npm
+          cache-dependency-path: tests/e2e/browser/package-lock.json
+
+      - name: Install pinned browser product E2E dependencies
+        timeout-minutes: 5
+        run: npm ci --prefix tests/e2e/browser
+
+      - name: Install pinned Chromium and system dependencies
+        timeout-minutes: 10
+        run: npx --prefix tests/e2e/browser playwright install --with-deps chromium
 
       - name: Set up Helm
         uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
@@ -206,12 +221,20 @@ jobs:
       - name: Run the real HTTP product and external judge loop
         run: tests/e2e/product.sh
 
+      - name: Run the real Chromium product journey
+        timeout-minutes: 5
+        run: scripts/run-browser-product-e2e.sh
+
       - name: Verify enforced NetworkPolicy isolation
         run: tests/e2e/network-policy.sh
 
       - name: Collect redacted product E2E diagnostics
         if: failure()
         run: scripts/diagnostics.sh || true
+
+      - name: Delete owned product E2E cluster
+        if: always()
+        run: scripts/cleanup-product-e2e.sh "$CROJ_E2E_CLUSTER_NAME"
 
       - name: Upload redacted product E2E diagnostics
         if: failure()
@@ -222,6 +245,11 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Delete owned product E2E cluster
-        if: always()
-        run: scripts/cleanup-product-e2e.sh "$CROJ_E2E_CLUSTER_NAME"
+      - name: Upload browser product E2E evidence
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: product-e2e-browser-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/product-e2e-browser/
+          if-no-files-found: warn
+          retention-days: 14

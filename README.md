@@ -21,7 +21,7 @@ make deploy
 make smoke
 ```
 
-当前平台底座的 MySQL、Redis、RocketMQ、SeaweedFS、Gateway API 和 Envoy Gateway 已在三节点 Kind 集群通过真实冒烟测试。本地 profile 还提供不出网的 Mailpit 邮件捕获器。应用 Chart 已覆盖前端、后端、文档、异步 REST 判题服务、两副本沙箱和默认关闭的一次性超级管理员 bootstrap Job；CI 另有自己命名、always 清理的三节点产品 E2E，覆盖真实登录、FPS/TestBundle、两条判题链路、社区、比赛、邮件和 Calico NetworkPolicy。发布环境必须传入 CI 产出的镜像 digest。
+当前平台底座的 MySQL、Redis、RocketMQ、SeaweedFS、Gateway API 和 Envoy Gateway 已在三节点 Kind 集群通过真实冒烟测试。本地 profile 还提供不出网的 Mailpit 邮件捕获器。应用 Chart 已覆盖前端、后端、文档、异步 REST 判题服务、两副本沙箱和默认关闭的一次性超级管理员 bootstrap Job；CI 另有自己命名、always 清理的三节点产品 E2E，覆盖真实登录、FPS/TestBundle、两条判题链路、社区、比赛、邮件和 Calico NetworkPolicy，并在同一集群上用固定版本 Playwright/Chromium 驱动真实浏览器关键路径。发布环境必须传入 CI 产出的镜像 digest。
 
 ## 不可变跨仓库构建
 

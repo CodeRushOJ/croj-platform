@@ -1,4 +1,5 @@
 import pathlib
+import json
 import re
 import subprocess
 import unittest
@@ -11,6 +12,15 @@ DEPLOY = ROOT / "scripts/deploy-product-e2e.sh"
 CLEANUP = ROOT / "scripts/cleanup-product-e2e.sh"
 INSTALL_NETWORKING = ROOT / "scripts/install-kind-networking.sh"
 KIND_CONFIG = ROOT / "config/kind/product-e2e.yaml"
+BROWSER_E2E_ROOT = ROOT / "tests/e2e/browser"
+BROWSER_PACKAGE = BROWSER_E2E_ROOT / "package.json"
+BROWSER_LOCK = BROWSER_E2E_ROOT / "package-lock.json"
+BROWSER_CONFIG = BROWSER_E2E_ROOT / "playwright.config.js"
+BROWSER_SPEC = BROWSER_E2E_ROOT / "product.spec.js"
+BROWSER_RUNNER = ROOT / "scripts/run-browser-product-e2e.sh"
+PRODUCT_E2E_DOC = ROOT / "docs/operations/product-e2e.md"
+README = ROOT / "README.md"
+CHANGELOG = ROOT / "CHANGELOG.md"
 
 
 class ProductE2EContractTest(unittest.TestCase):
@@ -48,6 +58,150 @@ class ProductE2EContractTest(unittest.TestCase):
             "product-e2e-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}",
             workflow,
         )
+
+    def test_product_gate_installs_and_runs_pinned_chromium_after_api_seed(self):
+        workflow = WORKFLOW.read_text()
+        self.assertIn("- name: Set up Node.js for browser product E2E", workflow)
+        self.assertIn("node-version: '24.15.0'", workflow)
+        self.assertIn("cache: npm", workflow)
+        self.assertIn(
+            "cache-dependency-path: tests/e2e/browser/package-lock.json",
+            workflow,
+        )
+        self.assertIn("npm ci --prefix tests/e2e/browser", workflow)
+        self.assertIn(
+            "npx --prefix tests/e2e/browser playwright install --with-deps chromium",
+            workflow,
+        )
+        self.assertIn("scripts/run-browser-product-e2e.sh", workflow)
+        self.assertLess(
+            workflow.index("tests/e2e/product.sh"),
+            workflow.index("scripts/run-browser-product-e2e.sh"),
+        )
+
+        package = json.loads(BROWSER_PACKAGE.read_text())
+        lock = json.loads(BROWSER_LOCK.read_text())
+        playwright_version = package["devDependencies"]["@playwright/test"]
+        self.assertRegex(playwright_version, r"^[0-9]+\.[0-9]+\.[0-9]+$")
+        self.assertEqual(
+            playwright_version,
+            lock["packages"]["node_modules/@playwright/test"]["version"],
+        )
+
+    def test_browser_failures_retain_playwright_evidence_as_an_actions_artifact(self):
+        workflow = WORKFLOW.read_text()
+        self.assertTrue(BROWSER_CONFIG.is_file(), "Playwright config is missing")
+        config = BROWSER_CONFIG.read_text()
+        self.assertIn("- name: Upload browser product E2E evidence", workflow)
+        browser_upload = workflow.split(
+            "- name: Upload browser product E2E evidence",
+            1,
+        )[1].split("- name:", 1)[0]
+        self.assertIn("if: failure()", browser_upload)
+        self.assertIn("actions/upload-artifact@", browser_upload)
+        self.assertIn(
+            "product-e2e-browser-${{ github.run_id }}-${{ github.run_attempt }}",
+            browser_upload,
+        )
+        self.assertIn("artifacts/product-e2e-browser/", browser_upload)
+        self.assertIn("trace: 'retain-on-failure'", config)
+        self.assertIn("screenshot: 'only-on-failure'", config)
+        self.assertIn("video: 'retain-on-failure'", config)
+        self.assertIn("artifacts/product-e2e-browser/test-results", config)
+        self.assertIn("artifacts/product-e2e-browser/report", config)
+
+    def test_browser_runner_is_owned_cluster_scoped_and_never_injects_auth(self):
+        self.assertTrue(BROWSER_RUNNER.is_file(), "browser product E2E runner is missing")
+        runner = BROWSER_RUNNER.read_text()
+        self.assertTrue(runner.startswith("#!/usr/bin/env bash\n"))
+        self.assertIn("set -Eeuo pipefail", runner)
+        self.assertIn(r"^croj-product-e2e-[0-9]+-[0-9]+$", runner)
+        self.assertIn("kubectl config current-context", runner)
+        self.assertIn('"kind-$cluster_name"', runner)
+        self.assertIn("admin-username", runner)
+        self.assertIn("admin-password", runner)
+        self.assertIn("npm run test:product", runner)
+        self.assertNotIn("localStorage", runner)
+        self.assertNotIn("Authorization:", runner)
+        self.assertNotRegex(runner.lower(), r"\bmock\b")
+        result = subprocess.run(
+            ["bash", "-n", str(BROWSER_RUNNER)],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_browser_config_targets_the_real_gateway_with_stable_failure_capture(self):
+        self.assertTrue(BROWSER_CONFIG.is_file(), "Playwright config is missing")
+        config = BROWSER_CONFIG.read_text()
+        self.assertIn("http://coderushoj.local:8080", config)
+        self.assertIn("MAP coderushoj.local 127.0.0.1", config)
+        self.assertIn("fullyParallel: false", config)
+        self.assertIn("workers: 1", config)
+        self.assertIn("forbidOnly: true", config)
+        self.assertIn("globalTimeout:", config)
+        self.assertNotIn("webServer:", config)
+
+    def test_browser_journey_drives_real_product_paths_without_network_stubs(self):
+        self.assertTrue(BROWSER_SPEC.is_file(), "browser product E2E spec is missing")
+        spec = BROWSER_SPEC.read_text()
+        for visible_contract in (
+            "用户名或邮箱",
+            "验证码",
+            "A+B Problem",
+            "提交代码",
+            "提交解答",
+            "ACCEPTED",
+            "Product E2E announcement",
+            "Real three-node Kind acceptance.",
+            "A+B product discussion",
+            "A+B product solution",
+            "Product E2E contest",
+            "题目导入",
+            "选择题目包",
+            "测试包管理",
+            "题目 ID",
+        ):
+            with self.subTest(visible_contract=visible_contract):
+                self.assertIn(visible_contract, spec)
+        self.assertIn("/api/captcha", spec)
+        self.assertIn("/api/user/login", spec)
+        self.assertIn("/api/submission", spec)
+        self.assertIn("getByRole", spec)
+        self.assertIn("getByLabel", spec)
+        self.assertNotIn("page.route(", spec)
+        self.assertNotIn("route.fulfill(", spec)
+        self.assertNotIn("setTimeout(", spec)
+        self.assertNotRegex(spec.lower(), r"\bmock\b")
+        self.assertNotRegex(spec.lower(), r"\bmysql\b")
+
+    def test_browser_product_gate_and_failure_evidence_are_documented(self):
+        operations = PRODUCT_E2E_DOC.read_text()
+        readme = README.read_text()
+        changelog = CHANGELOG.read_text()
+        for contract in (
+            "Playwright",
+            "Chromium",
+            "真实登录",
+            "题目列表",
+            "ACCEPTED",
+            "公告",
+            "题解",
+            "比赛详情",
+            "题目导入",
+            "TestBundle",
+            "trace",
+            "screenshot",
+            "video",
+            "run-browser-product-e2e.sh",
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, operations)
+        self.assertIn("浏览器", readme)
+        self.assertIn("Playwright", readme)
+        self.assertIn("Chromium", changelog)
+        self.assertIn("浏览器", changelog)
 
     def test_product_kind_cluster_has_three_nodes_and_a_policy_capable_cni(self):
         config = KIND_CONFIG.read_text()

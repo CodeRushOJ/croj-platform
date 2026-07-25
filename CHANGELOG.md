@@ -12,6 +12,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Features
 
+- 三节点产品门禁在真实 API 数据准备之后增加固定版本 Playwright/Chromium 浏览器验收，覆盖登录、题目列表与详情、代码提交到终态、公告、讨论/题解、比赛详情，以及管理端题目导入与 TestBundle 入口。
 - 增加跨仓库 `source-lock.json`，用五个官方仓库的 40 位 Git commit、构建路径和精确开发镜像名建立可审计的镜像输入。
 - 增加 commit-addressed checkout、五镜像 Buildx 构建和显式 Kind image load 命令；构建镜像写入 OCI source/revision 标签，载入命令不会隐式创建集群。
 - 应用 Helm Chart 现已渲染前端、后端、VitePress 文档、异步 REST 判题服务及双副本 gRPC 沙箱，并提供 Service、探针、资源边界和核心多副本组件 PDB。
@@ -40,6 +41,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Security
 
+- 浏览器验收不注入认证状态、不拦截网络请求；真实 CAPTCHA 继续使用 disposable 集群 Redis 白盒夹具，runner 对 owned cluster 名称和当前 kubectl context 都失败关闭。
 - 源码锁的 Shell 传递改为 NUL 分隔记录并拒绝全部 ASCII 控制字符；Kind 载入前强制核对镜像 OCI source/revision，checkout 缓存通过崩溃自动释放的内核文件锁并发发布并二次验证，旧 owner 目录只在宽限期和双重快照确认后隔离回收。
 - 源码锁校验会拒绝可变 ref、非 CodeRushOJ 远端、未知字段、不安全相对路径、重复镜像和不完整组件集合；已有 checkout 不干净时保持现场并 fail closed。
 - 生产 values 强制所有应用镜像使用 digest，任何缺失都会使 Helm 渲染失败。
@@ -57,6 +59,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Operations
 
+- 浏览器失败保留 Playwright trace、screenshot、video 与 HTML report，集群失败继续保留受限诊断；owned cluster 在 artifact 上传前通过 `always()` 清理，证据保留 14 天。
 - Kind 的两个工作节点新增 `coderushoj.io/sandbox=true` 专用调度标签。
 - 文档更新为长期运行沙箱、异步 REST、稳定 Webhook outbox 和 headless Service 架构，并记录本地/生产暴露差异。
 - 失败诊断按敏感运维数据以受限权限保存，默认不抓取应用日志；文档明确 Envoy Gateway controller/CRD 与应用 Helm release 的独立生命周期和回滚边界。

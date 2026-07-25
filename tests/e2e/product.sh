@@ -1225,7 +1225,7 @@ kubectl delete pod "$sandbox_dns_probe_pod" \
 while IFS= read -r sandbox_node; do
   [[ "$(
     kubectl get node "$sandbox_node" \
-      --output=jsonpath='{.metadata.labels.coderushoj\\.io/sandbox}'
+      --output=jsonpath='{.metadata.labels.coderushoj\.io/sandbox}'
   )" == "true" ]] || die "sandbox endpoint is not hosted on a sandbox worker node"
 done < <(
   jq -r '

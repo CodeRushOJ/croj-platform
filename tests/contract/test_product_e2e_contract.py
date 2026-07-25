@@ -568,6 +568,14 @@ class ProductE2EContractTest(unittest.TestCase):
         self.assertIn('kubectl delete pod "$sandbox_dns_probe_pod"', script)
         self.assertNotIn("--attach", script)
         self.assertNotIn("--rm", script)
+        self.assertIn(
+            r"--output=jsonpath='{.metadata.labels.coderushoj\.io/sandbox}'",
+            script,
+        )
+        self.assertNotIn(
+            r"--output=jsonpath='{.metadata.labels.coderushoj\\.io/sandbox}'",
+            script,
+        )
         self.assertIn("SANDBOX_GRPC_TARGET", script)
         self.assertIn("SANDBOX_ALLOW_LEGACY_ENDPOINT_SLICE", script)
         self.assertIn("dns:///sandbox-workers.coderushoj.svc.cluster.local:50051", script)

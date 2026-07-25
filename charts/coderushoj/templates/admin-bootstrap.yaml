@@ -33,7 +33,7 @@ spec:
             - name: CROJ_MODE
               value: "bootstrap-admin"
             - name: DATABASE_URL
-              value: {{ printf "jdbc:mysql://%s:%v/%s?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false" .Values.dependencies.mysql.host .Values.dependencies.mysql.port .Values.dependencies.mysql.database | quote }}
+              value: {{ printf "jdbc:mysql://%s:%v/%s?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&useSSL=false" .Values.dependencies.mysql.host .Values.dependencies.mysql.port .Values.dependencies.mysql.database | quote }}
             - name: DATABASE_USERNAME
               valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: mysql-username}}
             - name: DATABASE_PASSWORD

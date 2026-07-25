@@ -231,6 +231,16 @@ class ApplicationRenderTest(unittest.TestCase):
         self.assertNotIn("BOOTSTRAP_ADMIN_", backend_deployment)
         self.assertNotIn("coderushoj-e2e-admin-bootstrap", backend_deployment)
 
+    def test_backend_and_bootstrap_use_utc_for_database_timestamps(self):
+        rendered = self.render(
+            "--set",
+            "adminBootstrap.enabled=true",
+            "--set",
+            "adminBootstrap.secretName=coderushoj-e2e-admin-bootstrap",
+        )
+        self.assertEqual(2, rendered.count("serverTimezone=UTC"))
+        self.assertNotIn("serverTimezone=Asia/Shanghai", rendered)
+
     def test_admin_bootstrap_has_only_dns_and_mysql_network_access(self):
         rendered = self.render(
             "--set",

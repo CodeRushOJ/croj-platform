@@ -49,7 +49,7 @@ kubectl exec -n coderushoj statefulset/coderushoj-infra-rocketmq-broker -- \
 2. Redis 返回 `PONG`，清空后系统仍能从 MySQL 重建核心页面；
 3. RocketMQ 存在 `submission-topic` 和死信主题，测试消息只被结算一次；
 4. SeaweedFS 能读取已知测试包并通过 SHA-256 校验；
-5. 执行 `make smoke`，随后完成一条真实全语言判题用例（应用阶段完成后启用）；
+5. 执行 `make smoke`，随后通过前端完成至少一条真实提交并确认结果为 `ACCEPTED`；生产恢复演练还应逐一抽样所有已启用语言；
 6. 记录恢复点、耗时、数据损失窗口和验证人。
 
 密钥备份必须使用独立的加密密钥管理系统；不要把 `.workspace/secrets/` 或解密后的 Kubernetes Secret 提交到 Git。

@@ -720,11 +720,15 @@ class ExistingReleaseAssetTest(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def write_chart_archive(self, chart_name):
+    def write_chart_archive(self, chart_name, *, chart_yaml=None):
         archive = self.assets / f"{chart_name}-{self.version}.tgz"
         with tarfile.open(archive, "w:gz") as package:
             for path in sorted(self.chart_directories[chart_name].iterdir()):
-                data = path.read_bytes()
+                data = (
+                    chart_yaml.encode()
+                    if path.name == "Chart.yaml" and chart_yaml is not None
+                    else path.read_bytes()
+                )
                 info = tarfile.TarInfo(f"{chart_name}/{path.name}")
                 info.size = len(data)
                 info.mode = 0o644
@@ -807,6 +811,45 @@ class ExistingReleaseAssetTest(unittest.TestCase):
         result = self.run_verifier()
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("published", json.loads(result.stdout)["state"])
+
+    def test_accepts_helm_normalized_chart_metadata(self):
+        self.write_chart_archive(
+            "coderushoj",
+            chart_yaml=(
+                "apiVersion: v2\n"
+                f"appVersion: {self.version}\n"
+                "name: coderushoj\n"
+                f"version: {self.version}\n"
+            ),
+        )
+        (self.assets / "SHA256SUMS").unlink()
+        self.write_checksums()
+        self.write_release_json(draft=True, immutable=False)
+
+        result = self.run_verifier()
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("draft", json.loads(result.stdout)["state"])
+
+    def test_rejects_semantically_changed_chart_metadata(self):
+        self.write_chart_archive(
+            "coderushoj",
+            chart_yaml=(
+                "apiVersion: v2\n"
+                f"appVersion: {self.version}\n"
+                "description: tampered release chart\n"
+                "name: coderushoj\n"
+                f"version: {self.version}\n"
+            ),
+        )
+        (self.assets / "SHA256SUMS").unlink()
+        self.write_checksums()
+        self.write_release_json(draft=True, immutable=False)
+
+        result = self.run_verifier()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("Chart.yaml metadata does not match", result.stderr)
 
     def test_rejects_public_release_with_mismatched_author_or_mutability(self):
         for immutable, author in (

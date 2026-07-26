@@ -238,26 +238,78 @@ def chart_archive_files(archive, chart_name):
     return files
 
 
+def chart_metadata(contents, label):
+    try:
+        text = contents.decode("utf-8")
+    except UnicodeError as error:
+        raise VerificationError(f"{label} Chart.yaml must be UTF-8") from error
+
+    metadata = {}
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if line[:1].isspace():
+            raise VerificationError(
+                f"{label} Chart.yaml contains unsupported nested metadata at line {line_number}"
+            )
+        key, separator, raw_value = line.partition(":")
+        if not separator or not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", key):
+            raise VerificationError(
+                f"{label} Chart.yaml contains invalid metadata at line {line_number}"
+            )
+        if key in metadata:
+            raise VerificationError(f"{label} Chart.yaml contains duplicate key {key}")
+
+        value = raw_value.strip()
+        if not value:
+            raise VerificationError(f"{label} Chart.yaml key {key} has no scalar value")
+        if value.startswith('"'):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError as error:
+                raise VerificationError(
+                    f"{label} Chart.yaml key {key} has an invalid quoted value"
+                ) from error
+            if not isinstance(value, str):
+                raise VerificationError(
+                    f"{label} Chart.yaml key {key} must be a scalar string"
+                )
+        elif value.startswith("'"):
+            if len(value) < 2 or not value.endswith("'"):
+                raise VerificationError(
+                    f"{label} Chart.yaml key {key} has an invalid quoted value"
+                )
+            value = value[1:-1].replace("''", "'")
+        metadata[key] = value
+    return metadata
+
+
 def validate_chart(assets, chart_directory, chart_name, version):
     archive = assets / f"{chart_name}-{version}.tgz"
     packaged_files = chart_archive_files(archive, chart_name)
     source_files = chart_source_files(chart_directory)
+    packaged_chart_yaml = packaged_files.pop("Chart.yaml", None)
+    source_chart_yaml = source_files.pop("Chart.yaml", None)
+    if packaged_chart_yaml is None or source_chart_yaml is None:
+        raise VerificationError(f"{chart_name} Chart.yaml is missing")
     if packaged_files != source_files:
         raise VerificationError(
             f"{chart_name} package contents do not exactly match the release checkout"
         )
-    chart_yaml = packaged_files.get("Chart.yaml", b"")
-    try:
-        chart_text = chart_yaml.decode()
-    except UnicodeError as error:
-        raise VerificationError(f"{chart_name} Chart.yaml must be UTF-8") from error
-    expected_lines = {
+    packaged_metadata = chart_metadata(packaged_chart_yaml, f"packaged {chart_name}")
+    source_metadata = chart_metadata(source_chart_yaml, f"source {chart_name}")
+    if packaged_metadata != source_metadata:
+        raise VerificationError(
+            f"{chart_name} Chart.yaml metadata does not match the release checkout"
+        )
+    expected_metadata = {
         "name": chart_name,
         "version": version,
         "appVersion": version,
     }
-    for key, value in expected_lines.items():
-        if not re.search(rf"(?m)^{re.escape(key)}:\s*{re.escape(value)}\s*$", chart_text):
+    for key, value in expected_metadata.items():
+        if packaged_metadata.get(key) != value:
             raise VerificationError(f"{chart_name} Chart.yaml {key} must equal {value}")
 
 

@@ -176,6 +176,30 @@ helm upgrade --install coderushoj charts/coderushoj \
   --rollback-on-failure --wait --timeout 15m
 ```
 
+### Docker Hub 镜像源
+
+GHCR 是 canonical registry。若部署网络更适合访问 Docker Hub，可在 production profile 与 Release 的 digest-only values 之后追加 repository override：
+
+```bash
+helm template coderushoj charts/coderushoj \
+  --namespace coderushoj \
+  --values charts/coderushoj/values-production.yaml \
+  --values production-images.yaml \
+  --values charts/coderushoj/values-production-dockerhub.yaml \
+  --values application-production-values.yaml \
+  | kubeconform -strict -summary -ignore-missing-schemas
+
+helm upgrade --install coderushoj charts/coderushoj \
+  --namespace coderushoj \
+  --values charts/coderushoj/values-production.yaml \
+  --values production-images.yaml \
+  --values charts/coderushoj/values-production-dockerhub.yaml \
+  --values application-production-values.yaml \
+  --rollback-on-failure --wait --timeout 15m
+```
+
+`values-production-dockerhub.yaml` 只替换 Frontend、Backend、Judging Server 与 Sandbox 的 repository；它不提供 tag 或 digest，Docs 仍来自 GHCR。使用前必须把四个 Docker Hub OCI index digest 与平台 immutable Release 的 `production-images.json` 逐项核对。项目不发布或支持 `latest`，生产环境不得只按 tag 部署。
+
 生产发布前还必须确认 Gateway TLS Secret、真实 SMTP TLS 模式、备份、容量和支持 NetworkPolicy 的 CNI。
 生产 DBA 必须先建立 `coderushoj_judge`（或等价的独立 schema/实例）、授予
 `judge-database-dsn` 所代表账号仅该 schema 的 DDL/DML 权限，并先在预生产让

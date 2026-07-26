@@ -250,10 +250,12 @@ make smoke
 
 ## 构建多架构镜像
 
-各原仓库的 CI 使用 Buildx 发布 `linux/amd64,linux/arm64` 镜像，开发 values 固定 SemVer 且不使用 `latest`；生产 profile 缺少任意镜像 digest 时 Helm 会直接拒绝渲染：
+各原仓库的 CI 使用 Buildx 发布 `linux/amd64,linux/arm64` 镜像，开发 values 固定 SemVer 且不使用 `latest`；生产 profile 缺少任意镜像 digest 时 Helm 会直接拒绝渲染。GHCR 是 canonical registry，Docker Hub 仅接收同一 OCI index 的经验证镜像源；不得在两个 registry 独立重建同一版本：
 
 ```bash
 docker buildx create --name coderushoj-builder --use
 docker buildx build --platform linux/amd64,linux/arm64 \
   --tag ghcr.io/coderushoj/SERVICE:VERSION --push .
 ```
+
+正式部署优先使用 immutable Release 的 `production-images.yaml`。需要 Docker Hub 时，再追加 `charts/coderushoj/values-production-dockerhub.yaml` 仅覆盖四组件 repository；仍必须使用 Release 中的 digest，不能使用 `latest`。完整命令和 digest 核对要求见[应用服务部署](application-deployment.md#docker-hub-镜像源)。

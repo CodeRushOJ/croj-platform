@@ -1,0 +1,9 @@
+images:
+  frontend:
+    repository: docker.io/pursuitno1/croj-frontend
+  backend:
+    repository: docker.io/pursuitno1/croj-backend
+  judgingServer:
+    repository: docker.io/pursuitno1/croj-judging-server
+  sandbox:
+    repository: docker.io/pursuitno1/croj-sandbox

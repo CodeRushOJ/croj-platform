@@ -10,7 +10,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Features
 
-- 后续兼容功能将记录在本节，并在下一次语义化发版时归档。
+- 为四个已发布组件增加 Docker Hub 多架构镜像源与可选 Helm repository override；GHCR 保持 canonical registry，Docs 保持使用 GHCR。
 
 ### Fixes
 
@@ -18,11 +18,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Security
 
-- 后续安全更新将记录在本节，并注明升级或密钥轮换影响。
+- Docker Hub 镜像直接复制对应 GHCR OCI index，并以匿名读取、完整 index SHA-256、`linux/amd64`、`linux/arm64` 和全部子 manifest 复核；不发布或支持 `latest`。
 
 ### Operations
 
-- 后续部署、监控与回滚变化将记录在本节。
+- README 与应用部署指南记录四组件独立版本、两个 registry 地址、精确 digest 和 Docker Hub override 顺序；生产部署仍只信任 immutable GitHub Release 的 digest-only 清单。
 
 ## [1.0.2] - 2026-07-25
 

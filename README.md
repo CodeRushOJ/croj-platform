@@ -38,6 +38,19 @@ make images-load
 
 四个外部源码按 `<组件>/<commit>` 放在 `.workspace/sources/`，不会覆盖开发者已有仓库。`test-bundle-contract` 会让锁定版本的 Backend 真实生成 TestBundle v1 ZIP，再把同一个文件交给锁定版本的 Judging 解析，避免两份手写 fixture 假装联调。`images-build` 会先做幂等 checkout，再用 Buildx 构建四个锁定组件镜像和一个当前 checkout 的 Docs 镜像，并写入各自的 OCI source/revision 标签；`images-load` 仅在外部镜像与源码锁、Docs 镜像与当前平台 revision 分别一致时才载入已有集群，不会创建或启动 Kind 集群。完整更新与故障处理见[快速开始](docs/guide/quickstart.md#不可变源码与开发镜像)。
 
+## 容器镜像
+
+GHCR 是组件 Release 的 canonical registry；Docker Hub 提供按 digest 逐字节验证的多架构镜像源，不是独立重建。四个组件独立版本化，不发布或支持 `latest`。生产部署只使用平台 immutable GitHub Release 记录的 digest，不根据 registry 页面时间或可变标签拼装版本。
+
+| 组件 | 版本 | GHCR | Docker Hub 镜像源 | OCI index digest |
+| --- | --- | --- | --- | --- |
+| Frontend | `v1.0.1` | `ghcr.io/coderushoj/croj-frontend` | `docker.io/pursuitno1/croj-frontend` | `sha256:97c01e8febd44f3507e6d30e00db906f506ead2a4afab0ebebd2e7bfe7b2a43b` |
+| Backend | `v1.0.3` | `ghcr.io/coderushoj/croj-backend` | `docker.io/pursuitno1/croj-backend` | `sha256:ec77492aa73089913a331db7c8dae39ca8b81ee579c13554a5bc1a763b2ac1b6` |
+| Judging Server | `v1.0.2` | `ghcr.io/coderushoj/croj-judging-server` | `docker.io/pursuitno1/croj-judging-server` | `sha256:ffe302a1b2d3d07f063500c3da9508d1d4b9373753913de107591899eb10b4df` |
+| Sandbox | `v1.0.2` | `ghcr.io/coderushoj/croj-sandbox` | `docker.io/pursuitno1/croj-sandbox` | `sha256:3cc6d8a9b0af30b560fdbbb82769d083c2dfc13966004428f5bdf30b0f317464` |
+
+每个 index 都包含 `linux/amd64`、`linux/arm64` 和同批次证明 manifest。Docker Hub 部署覆盖只替换四组件 repository，不携带 tag 或 digest；Docs 仍使用 GHCR。使用方法见[应用服务部署](docs/guide/application-deployment.md#docker-hub-镜像源)。
+
 ## 项目状态
 
 - 当前平台版本：`1.0.2`

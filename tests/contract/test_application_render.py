@@ -569,6 +569,54 @@ class ApplicationRenderTest(unittest.TestCase):
         self.assertNotEqual(0, missing_smtp.returncode)
         self.assertIn("/backend/smtp", missing_smtp.stderr)
 
+    def test_production_can_use_verified_docker_hub_mirrors(self):
+        mirror_values = CHART / "values-production-dockerhub.yaml"
+        self.assertEqual(
+            """images:
+  frontend:
+    repository: docker.io/pursuitno1/croj-frontend
+  backend:
+    repository: docker.io/pursuitno1/croj-backend
+  judgingServer:
+    repository: docker.io/pursuitno1/croj-judging-server
+  sandbox:
+    repository: docker.io/pursuitno1/croj-sandbox
+""",
+            mirror_values.read_text(),
+        )
+        digest = "sha256:" + "a" * 64
+        digest_args = sum(
+            (
+                ["--set-string", f"images.{name}.digest={digest}"]
+                for name in ("frontend", "backend", "judgingServer", "sandbox", "docs")
+            ),
+            [],
+        )
+        rendered = self.render(
+            "--values",
+            str(CHART / "values-production.yaml"),
+            "--values",
+            str(mirror_values),
+            *digest_args,
+            "--set",
+            "backend.smtp.host=smtp.operator.example",
+            "--set",
+            "backend.smtp.username=coderushoj@operator.example",
+        )
+
+        for repository in (
+            "docker.io/pursuitno1/croj-frontend",
+            "docker.io/pursuitno1/croj-backend",
+            "docker.io/pursuitno1/croj-judging-server",
+            "docker.io/pursuitno1/croj-sandbox",
+        ):
+            self.assertIn(f"image: {repository}@{digest}", rendered)
+        self.assertIn(
+            f"image: ghcr.io/coderushoj/coderushoj-docs@{digest}",
+            rendered,
+        )
+        self.assertNotIn(":latest", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()

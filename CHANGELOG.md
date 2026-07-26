@@ -52,7 +52,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Operations
 
 - 保留失败的 annotated `v1.0.0` 与 `v1.0.1` 标签，不移动或删除公开历史；两者均未创建 GitHub Release 或可部署制品。正式制品发布从 `v1.0.2` 开始。
-- GitHub Release 发布后通过 API 验证 `draft=false` 与仓库级 immutable release 生效；若任一步骤失败，未发布 draft 保留为不对外宣称成功的事务边界。
+- GitHub Release 发布后通过 API 验证 `draft=false` 与仓库级 immutable release 生效；draft 创建后、正式发布前失败时，未发布 draft 保留为不对外宣称成功的事务边界。
 
 ### Known Limitations
 

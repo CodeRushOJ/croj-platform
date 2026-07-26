@@ -271,7 +271,11 @@ class InfrastructureRenderTest(unittest.TestCase):
             2048,
             "local MySQL needs 2 GiB of cgroup headroom for transactional problem imports",
         )
-        self.assertLessEqual(request_mib, 1024)
+        self.assertEqual(
+            request_mib,
+            512,
+            "local MySQL request must remain scheduler-visible without consuming import headroom",
+        )
 
         requests = re.findall(r"requests:\n\s+cpu: [^\n]+\n\s+memory: (\d+)(Mi|Gi)", rendered)
         self.assertTrue(requests, "no workload memory requests were rendered")

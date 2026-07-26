@@ -10,7 +10,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Features
 
-- 为四个已发布组件增加 Docker Hub 多架构镜像源与可选 Helm repository override；GHCR 保持 canonical registry，Docs 保持使用 GHCR。
+- 后续兼容功能将记录在本节，并在下一次语义化发版时归档。
 
 ### Fixes
 
@@ -18,11 +18,54 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Security
 
-- Docker Hub 镜像直接复制对应 GHCR OCI index，并以匿名读取、完整 index SHA-256、`linux/amd64`、`linux/arm64` 和全部子 manifest 复核；不发布或支持 `latest`。
+- 后续安全更新将记录在本节，并注明升级或密钥轮换影响。
 
 ### Operations
 
-- README 与应用部署指南记录四组件独立版本、两个 registry 地址、精确 digest 和 Docker Hub override 顺序；生产部署仍只信任 immutable GitHub Release 的 digest-only 清单。
+- 后续部署、监控与回滚变化将记录在本节。
+
+## [1.0.3] - 2026-07-26
+
+### Features
+
+- 为 Frontend、Backend、Judging Server 与 Sandbox 预留可选 Docker Hub Helm repository override；GHCR 保持 canonical registry 和当前正式来源，Docs 保持使用 GHCR。
+- README 和应用部署指南记录四组件独立版本、GHCR 精确 OCI index digest、Docker Hub 目标地址、启用前验证条件与 production values 顺序。
+
+### Fixes
+
+- 修复正式安装无法匿名拉取组件镜像的发布阻断：发版前要求四个 canonical GHCR 组件包可匿名读取，并继续在首次 registry 写入前验证其精确双架构 index。
+- 保留 `corepack enable` 与固定 `pnpm@11.9.0` 的发布工具链门禁，不依赖 runner 上漂移的全局包管理器。
+- 平台 source lock 更新到 Backend `v1.0.4`，统一 Maven、JAR、SBOM 和 OCI 版本元数据，并移除公开 OpenAPI 中的个人联系信息。
+
+### Security
+
+- 后续 Docker Hub 镜像必须直接复制对应 GHCR OCI index，不得独立重建；启用前必须以无凭据读取、完整 index SHA-256、`linux/amd64`、`linux/arm64` 和全部子 manifest 复核。
+- 四个组件只发布各自的正式 `vX.Y.Z` 标签，不创建或支持 `latest`；生产部署继续只信任 immutable GitHub Release 的 digest-only 资产。
+- 后续 Docker Hub 发布凭据只能用于隔离的临时客户端配置，完成后删除；仓库、commit、CI 日志和长期 Docker 配置均不得保存该凭据。
+- Backend `v1.0.4` 的公开 Swagger 联系信息只指向 CodeRushOJ 组织，不包含个人邮箱或个人主页。
+
+### Migrations
+
+- 无数据库、对象存储、消息队列、Judge schema 或账号迁移。
+
+### Operations
+
+- 保留失败的 annotated `v1.0.0`、`v1.0.1` 与 `v1.0.2` 标签，不移动或删除公开历史；`v1.0.2` 在任何 registry mutation 或 GitHub Release 创建前因 GHCR 匿名预检失败而停止。
+- GHCR 四个 canonical 组件镜像均已匿名验证：Frontend `v1.0.1`、Backend `v1.0.4`、Judging Server `v1.0.2` 与 Sandbox `v1.0.2`；Docker Hub 目标 tag 尚未纳入本次发版证据。
+- 发布仍要求精确 main commit 的静态门禁、TestBundle、三节点平台 smoke、真实 HTTP/异步 Judge/Chromium 产品 E2E 和 NetworkPolicy 隔离全部成功。
+
+### Known Limitations
+
+- Chart 内有状态依赖仍面向本机、测试和参考部署；高可用生产应使用托管 MySQL、Redis、RocketMQ 与 S3 兼容对象存储。
+- Docker Hub repository metadata 与 immutable-tag policy 需要 `repo:admin` 权限；目标 tag 在全部公开发布、匿名拉取和 digest 复核完成前不能作为部署来源，生产安全边界始终以 digest 而非 registry tag policy 为准。
+
+### Upgrade
+
+- 无数据迁移；使用 `v1.0.3` immutable Release 的 digest-only `production-images.yaml`、默认 GHCR repository 与 Chart 包执行 `helm upgrade --install --atomic`。Docker Hub 四个目标 tag 全部完成独立验证后才能在 Release values 后追加 `values-production-dockerhub.yaml`，且不得丢弃 digest。
+
+### Rollback
+
+- `v1.0.0`、`v1.0.1` 与 `v1.0.2` 未产生可部署制品，不能作为制品回滚目标；运行时回滚应使用先前成功的 Helm revision 或经过验证的固定 digest，且不会自动回滚数据库 migration。
 
 ## [1.0.2] - 2026-07-25
 
@@ -53,8 +96,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Operations
 
-- 保留失败的 annotated `v1.0.0` 与 `v1.0.1` 标签，不移动或删除公开历史；两者均未创建 GitHub Release 或可部署制品。正式制品发布从 `v1.0.2` 开始。
-- GitHub Release 发布后通过 API 验证 `draft=false` 与仓库级 immutable release 生效；draft 创建后、正式发布前失败时，未发布 draft 保留为不对外宣称成功的事务边界。
+- 保留失败的 annotated `v1.0.0`、`v1.0.1` 与 `v1.0.2` 标签，不移动或删除公开历史；`v1.0.2` 在任何 registry mutation 或 GitHub Release 创建前失败，原因是四个组件 GHCR 包未通过匿名读取预检，因此三个标签均未产生可部署制品。
+- Release workflow 设计为发布后通过 API 验证 `draft=false` 与仓库级 immutable release 生效；`v1.0.2` 未进入 draft 事务阶段，仅作为失败审计标签保留。
 
 ### Known Limitations
 
@@ -62,11 +105,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Upgrade
 
-- 候选环境无需数据迁移；使用 `v1.0.2` Release 的 digest-only `production-images.yaml` 与 Chart 包执行 `helm upgrade --install --atomic`。
+- 无数据迁移；`v1.0.2` 没有 GitHub Release 或 `production-images.yaml`，不得部署。候选环境应等待后续成功的 immutable Release，或继续使用此前已验证的 Helm revision。
 
 ### Rollback
 
-- `v1.0.0` 与 `v1.0.1` 未产生可部署制品，不能作为制品回滚目标；运行时回滚应使用先前成功 Helm revision，`v1.0.2` 可按固定 digest 重建。
+- `v1.0.0`、`v1.0.1` 与 `v1.0.2` 均未产生可部署制品，不能作为制品回滚目标；运行时回滚应使用先前成功的 Helm revision 或经独立验证的固定 digest，且不会自动回滚数据库 migration。
 
 ## [1.0.1] - 2026-07-25
 
@@ -295,8 +338,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - 判题服务仍包含模拟结果路径，沙箱隔离实现与 README 描述之间存在差距。
 - 缺少系统化的前后端测试、真实隐藏测试数据、CI、升级回滚与运维文档。
 
-[Unreleased]: https://github.com/CodeRushOJ/croj-platform/compare/v1.0.2...HEAD
-[1.0.2]: https://github.com/CodeRushOJ/croj-platform/releases/tag/v1.0.2
+[Unreleased]: https://github.com/CodeRushOJ/croj-platform/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/CodeRushOJ/croj-platform/releases/tag/v1.0.3
+[1.0.2]: https://github.com/CodeRushOJ/croj-platform/tree/v1.0.2
 [1.0.1]: https://github.com/CodeRushOJ/croj-platform/tree/v1.0.1
 [1.0.0]: https://github.com/CodeRushOJ/croj-platform/tree/v1.0.0
 [0.1.0]: https://github.com/CodeRushOJ/croj-platform/releases/tag/v0.1.0

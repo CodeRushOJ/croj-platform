@@ -43,7 +43,7 @@ CodeRushOJ 遵循 [SemVer](https://semver.org/) 和协调发布模型。各服�
 | 组件 | Release manifest 资产 | 固定 SHA-256 |
 | --- | --- | --- |
 | Frontend | `image-artifact.json` | `5af165529a4b8882dc492acf9886c424cf2aaebd43a7a77ea3c76018674d9a17` |
-| Backend | `backend-image.json` | `9474f05787b758d76e6115a6c8af329ab30203d141f11996558897b074d505ed` |
+| Backend | `backend-image.json` | `3df4a8d593802e4fbac26f877173539cbb55e8b59aaac15ea7d2a5afbd7468db` |
 | Judging Server | `judging-server-image.json` | `813d063d844fb0e19554fa15589d24c6052dbd85aa3cafc1dfdb4b5af2c71fbd` |
 | Sandbox | `sandbox-image.json` | `3b729035b7a7760ed25d86905c4db2da76bb21886df2798b0db0f4cdeb14e0ef` |
 

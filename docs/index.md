@@ -36,7 +36,7 @@ features:
 
 ## 当前状态
 
-平台 `1.0.2` 已完成三节点 Kind 上前端、后端、Judge、Sandbox、MySQL、Redis、RocketMQ、SeaweedFS、Mailpit 与真实浏览器/判题闭环，并保留跨仓独立迭代和不可变源码锁。
+平台 `1.0.3` 已完成三节点 Kind 上前端、后端、Judge、Sandbox、MySQL、Redis、RocketMQ、SeaweedFS、Mailpit 与真实浏览器/判题闭环，并保留跨仓独立迭代、不可变源码锁和经 digest 验证的 GHCR 正式镜像。Docker Hub repository override 已预留，但尚未纳入当前平台发版证据。
 
 ::: warning 生产边界
 仓库内有状态依赖适合本机和参考部署；高可用生产应使用托管数据服务，并从 GitHub Release 的 digest-only 清单部署应用镜像。

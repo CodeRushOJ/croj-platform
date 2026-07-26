@@ -80,5 +80,5 @@
 ### Task 5: Review and publish
 
 - [ ] Review the complete diff against the supplied requirements and fix every critical or important finding.
-- [ ] Verify `HeZephyr <unique.hzf@gmail.com>` for author and committer.
+- [ ] Verify the configured GitHub identity for both author and committer.
 - [ ] Commit intentionally, push `codex/platform-final-e2e`, open a draft PR against `main`, and report exact SHA/check results.

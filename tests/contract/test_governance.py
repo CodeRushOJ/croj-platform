@@ -190,14 +190,14 @@ class GovernanceContractTest(unittest.TestCase):
 
     def test_v1_release_version_and_notes_match_shipped_platform(self):
         version = (ROOT / "VERSION").read_text().strip()
-        self.assertEqual("1.0.2", version)
+        self.assertEqual("1.0.3", version)
         for chart in ("charts/coderushoj/Chart.yaml", "charts/coderushoj-infra/Chart.yaml"):
             manifest = self.read(chart)
             self.assertIn(f"version: {version}", manifest)
             self.assertIn(f'appVersion: "{version}"', manifest)
 
         changelog = self.read("CHANGELOG.md")
-        release_heading = f"## [{version}] - 2026-07-25"
+        release_heading = f"## [{version}] - 2026-07-26"
         unreleased = changelog.split("## [Unreleased]", 1)[1].split(
             release_heading, 1
         )[0]
@@ -227,6 +227,19 @@ class GovernanceContractTest(unittest.TestCase):
             f"[{version}]: https://github.com/CodeRushOJ/croj-platform/releases/tag/v{version}",
             changelog,
         )
+        v102 = changelog.split("## [1.0.2] - 2026-07-25", 1)[1].split(
+            "\n## [1.0.1]", 1
+        )[0]
+        self.assertIn(
+            "`v1.0.2` 在任何 registry mutation 或 GitHub Release 创建前失败",
+            v102,
+        )
+        for stale_claim in (
+            "正式制品发布从 `v1.0.2` 开始",
+            "使用 `v1.0.2` Release",
+            "`v1.0.2` 可按固定 digest 重建",
+        ):
+            self.assertNotIn(stale_claim, v102)
         self.assertIn(
             "[1.0.0]: https://github.com/CodeRushOJ/croj-platform/tree/v1.0.0",
             changelog,

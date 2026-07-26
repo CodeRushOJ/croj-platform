@@ -25,7 +25,7 @@ make smoke
 
 ## 不可变跨仓库构建
 
-`config/source-lock.json` 只锁定 Frontend、Backend、Judging Server 和 Sandbox 四个外部仓库。source lock v3 的每项只接受 CodeRushOJ 官方 HTTPS 仓库、40 位小写 Git commit、对应的精确正式 SemVer tag、受约束的构建路径、Chart 使用的精确 `:dev` 镜像名，以及组件专属的 Release manifest 文件名和 64 位小写 SHA-256；branch、tag 和 `latest` 都不能替代 commit 作为跨仓库构建真相。当前固定资产为 Frontend `image-artifact.json` / `5af165529a4b8882dc492acf9886c424cf2aaebd43a7a77ea3c76018674d9a17`、Backend `backend-image.json` / `9474f05787b758d76e6115a6c8af329ab30203d141f11996558897b074d505ed`、Judging Server `judging-server-image.json` / `813d063d844fb0e19554fa15589d24c6052dbd85aa3cafc1dfdb4b5af2c71fbd`、Sandbox `sandbox-image.json` / `3b729035b7a7760ed25d86905c4db2da76bb21886df2798b0db0f4cdeb14e0ef`。Release workflow 必须先重新下载、按 source lock hash-before-parse 校验四组件公开 manifest，并校验最终制品 checksums，再创建完整的 verified draft Release；重跑会把恢复资产中的四组件对象与该可信 preflight 逐项比较，并用当前 CHANGELOG 和 Chart 重建核对 notes/render 后复用已有 draft，不删除或替换它。Docs SemVer tag 的 workflow 会先检查、仅在未观察到 tag 时创建，并在写后复核 digest；已观察到不同 digest 时立即失败。GHCR API 不提供原子 create-if-absent，外部 package 管理员的并发写入必须通过最小发布权限和运维互斥避免。部署真相始终是 immutable GitHub Release 中的 digest-only 资产。Docs 不自引用旧的平台提交：开发与产品 E2E 始终从当前平台 checkout 构建 Docs 镜像，并用当前 `GITHUB_SHA`（本地为 `HEAD`）写入 OCI provenance；正式文档镜像由 release workflow 从最新 `main` 上的 annotated SemVer tag 当前 tree 构建。
+`config/source-lock.json` 只锁定 Frontend、Backend、Judging Server 和 Sandbox 四个外部仓库。source lock v3 的每项只接受 CodeRushOJ 官方 HTTPS 仓库、40 位小写 Git commit、对应的精确正式 SemVer tag、受约束的构建路径、Chart 使用的精确 `:dev` 镜像名，以及组件专属的 Release manifest 文件名和 64 位小写 SHA-256；branch、tag 和 `latest` 都不能替代 commit 作为跨仓库构建真相。当前固定资产为 Frontend `image-artifact.json` / `5af165529a4b8882dc492acf9886c424cf2aaebd43a7a77ea3c76018674d9a17`、Backend `backend-image.json` / `3df4a8d593802e4fbac26f877173539cbb55e8b59aaac15ea7d2a5afbd7468db`、Judging Server `judging-server-image.json` / `813d063d844fb0e19554fa15589d24c6052dbd85aa3cafc1dfdb4b5af2c71fbd`、Sandbox `sandbox-image.json` / `3b729035b7a7760ed25d86905c4db2da76bb21886df2798b0db0f4cdeb14e0ef`。Release workflow 必须先重新下载、按 source lock hash-before-parse 校验四组件公开 manifest，并校验最终制品 checksums，再创建完整的 verified draft Release；重跑会把恢复资产中的四组件对象与该可信 preflight 逐项比较，并用当前 CHANGELOG 和 Chart 重建核对 notes/render 后复用已有 draft，不删除或替换它。Docs SemVer tag 的 workflow 会先检查、仅在未观察到 tag 时创建，并在写后复核 digest；已观察到不同 digest 时立即失败。GHCR API 不提供原子 create-if-absent，外部 package 管理员的并发写入必须通过最小发布权限和运维互斥避免。部署真相始终是 immutable GitHub Release 中的 digest-only 资产。Docs 不自引用旧的平台提交：开发与产品 E2E 始终从当前平台 checkout 构建 Docs 镜像，并用当前 `GITHUB_SHA`（本地为 `HEAD`）写入 OCI provenance；正式文档镜像由 release workflow 从最新 `main` 上的 annotated SemVer tag 当前 tree 构建。
 
 ```bash
 make source-verify
@@ -40,20 +40,20 @@ make images-load
 
 ## 容器镜像
 
-GHCR 是组件 Release 的 canonical registry；Docker Hub 提供按 digest 逐字节验证的多架构镜像源，不是独立重建。四个组件独立版本化，不发布或支持 `latest`。生产部署只使用平台 immutable GitHub Release 记录的 digest，不根据 registry 页面时间或可变标签拼装版本。
+GHCR 是组件 Release 的 canonical registry，也是当前已匿名读取并按 digest 验证的正式来源。仓库预留 Docker Hub repository override 作为可选镜像路径，但对应 tag 在完成公开发布和匿名 digest 复核前不得启用。四个组件独立版本化，不发布或支持 `latest`。生产部署只使用平台 immutable GitHub Release 记录的 digest，不根据 registry 页面时间或可变标签拼装版本。
 
-| 组件 | 版本 | GHCR | Docker Hub 镜像源 | OCI index digest |
+| 组件 | 版本 | GHCR | Docker Hub 目标（待发布/验证） | OCI index digest |
 | --- | --- | --- | --- | --- |
 | Frontend | `v1.0.1` | `ghcr.io/coderushoj/croj-frontend` | `docker.io/pursuitno1/croj-frontend` | `sha256:97c01e8febd44f3507e6d30e00db906f506ead2a4afab0ebebd2e7bfe7b2a43b` |
-| Backend | `v1.0.3` | `ghcr.io/coderushoj/croj-backend` | `docker.io/pursuitno1/croj-backend` | `sha256:ec77492aa73089913a331db7c8dae39ca8b81ee579c13554a5bc1a763b2ac1b6` |
+| Backend | `v1.0.4` | `ghcr.io/coderushoj/croj-backend` | `docker.io/pursuitno1/croj-backend` | `sha256:a94bf4b9be5681f037247ab922cb83563940ed867b592d06a4fe7eba869e88d0` |
 | Judging Server | `v1.0.2` | `ghcr.io/coderushoj/croj-judging-server` | `docker.io/pursuitno1/croj-judging-server` | `sha256:ffe302a1b2d3d07f063500c3da9508d1d4b9373753913de107591899eb10b4df` |
 | Sandbox | `v1.0.2` | `ghcr.io/coderushoj/croj-sandbox` | `docker.io/pursuitno1/croj-sandbox` | `sha256:3cc6d8a9b0af30b560fdbbb82769d083c2dfc13966004428f5bdf30b0f317464` |
 
-每个 index 都包含 `linux/amd64`、`linux/arm64` 和同批次证明 manifest。Docker Hub 部署覆盖只替换四组件 repository，不携带 tag 或 digest；Docs 仍使用 GHCR。使用方法见[应用服务部署](docs/guide/application-deployment.md#docker-hub-镜像源)。
+每个已验证的 GHCR index 都包含 `linux/amd64`、`linux/arm64` 和同批次证明 manifest。Docker Hub 部署覆盖只替换四组件 repository，不携带 tag 或 digest；Docs 仍使用 GHCR。该覆盖仅在四个目标 tag 均已公开、其 OCI index 与 GHCR digest 逐项一致且匿名拉取验证通过后可用，检查方法见[应用服务部署](docs/guide/application-deployment.md#docker-hub-镜像源)。
 
 ## 项目状态
 
-- 当前平台版本：`1.0.2`
+- 当前平台版本：`1.0.3`
 - 历史原型：2025-03-31 至 2025-04-26，详见 [CHANGELOG.md](CHANGELOG.md)
 - 目标：完整 v1.0 OJ，包含竞赛、论坛和题解，不包含付费功能
 - 参考容量：1,000 在线用户、100 并发提交、20 个并行沙箱执行

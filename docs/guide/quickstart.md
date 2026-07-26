@@ -105,7 +105,7 @@ helm upgrade --install coderushoj ./charts/coderushoj \
 | 组件 | Release manifest 资产 | 固定 SHA-256 |
 | --- | --- | --- |
 | Frontend | `image-artifact.json` | `5af165529a4b8882dc492acf9886c424cf2aaebd43a7a77ea3c76018674d9a17` |
-| Backend | `backend-image.json` | `9474f05787b758d76e6115a6c8af329ab30203d141f11996558897b074d505ed` |
+| Backend | `backend-image.json` | `3df4a8d593802e4fbac26f877173539cbb55e8b59aaac15ea7d2a5afbd7468db` |
 | Judging Server | `judging-server-image.json` | `813d063d844fb0e19554fa15589d24c6052dbd85aa3cafc1dfdb4b5af2c71fbd` |
 | Sandbox | `sandbox-image.json` | `3b729035b7a7760ed25d86905c4db2da76bb21886df2798b0db0f4cdeb14e0ef` |
 
@@ -250,7 +250,7 @@ make smoke
 
 ## 构建多架构镜像
 
-各原仓库的 CI 使用 Buildx 发布 `linux/amd64,linux/arm64` 镜像，开发 values 固定 SemVer 且不使用 `latest`；生产 profile 缺少任意镜像 digest 时 Helm 会直接拒绝渲染。GHCR 是 canonical registry，Docker Hub 仅接收同一 OCI index 的经验证镜像源；不得在两个 registry 独立重建同一版本：
+各原仓库的 CI 使用 Buildx 发布 `linux/amd64,linux/arm64` 镜像，开发 values 固定 SemVer 且不使用 `latest`；生产 profile 缺少任意镜像 digest 时 Helm 会直接拒绝渲染。GHCR 是 canonical registry 和当前正式来源。Docker Hub 是待完成公开发布与匿名 digest 复核的可选镜像目标；后续镜像只能复制同一 OCI index，不得在两个 registry 独立重建同一版本：
 
 ```bash
 docker buildx create --name coderushoj-builder --use
@@ -258,4 +258,4 @@ docker buildx build --platform linux/amd64,linux/arm64 \
   --tag ghcr.io/coderushoj/SERVICE:VERSION --push .
 ```
 
-正式部署优先使用 immutable Release 的 `production-images.yaml`。需要 Docker Hub 时，再追加 `charts/coderushoj/values-production-dockerhub.yaml` 仅覆盖四组件 repository；仍必须使用 Release 中的 digest，不能使用 `latest`。完整命令和 digest 核对要求见[应用服务部署](application-deployment.md#docker-hub-镜像源)。
+正式部署使用 immutable Release 的 `production-images.yaml` 与 GHCR。只有四个 Docker Hub 目标 tag 全部公开且匿名 digest 复核通过后，才可追加 `charts/coderushoj/values-production-dockerhub.yaml` 仅覆盖四组件 repository；仍必须使用 Release 中的 digest，不能使用 `latest`。完整命令和 digest 核对要求见[应用服务部署](application-deployment.md#docker-hub-镜像源)。

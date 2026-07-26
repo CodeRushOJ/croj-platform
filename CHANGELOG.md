@@ -38,7 +38,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - 四个组件的镜像清单改从其公开 GitHub Release 资产下载，并由 source lock v3 固定资产文件名与 SHA-256，不再错误地使用仅限平台仓库的 `GITHUB_TOKEN` 读取跨仓 Actions artifact；资产字节、清单字段、源码锁 revision/tag 和四个 GHCR 双架构索引均在首次推送前验证。
 - Docs 镜像先仅发布 commit-addressed `sha-<revision>` staging tag；全部生产 values、registry、Helm/Kubeconform 与 checksums 验证完成后才创建 SemVer 镜像 tag，避免前置失败留下看似正式但没有 Release 的部分版本。
 - Release workflow 在解析跨仓 manifest 前校验下载字节，并在全部最终制品 checksums 完成后先创建完整 verified draft Release，再执行 Docs SemVer promotion，最后才发布 Release。
-- Docs SemVer promotion 对不存在的 tag 才创建；已存在且 digest 相同时幂等继续，digest 不同时 fail closed 且不覆盖。重跑可替换同 tag draft，但不会替换已发布 Release。
+- Release 重跑在首次 registry 写入前识别并严格验证同 tag draft/published Release，同时重新下载并 hash-before-parse 校验四组件公开 manifest；恢复清单的四组件对象必须与可信 preflight 完全一致，notes/render 必须与当前 CHANGELOG/Chart 重建结果一致。draft 资产及其 Docs digest 被原样复用且永不删除，精确 immutable published Release 作为幂等完成，任何作者、状态、资产、checksum、版本、SHA、source lock、镜像清单或 Chart 漂移都 fail closed。
+- Docs SemVer promotion 执行写前检查与写后 digest 复核，已观察到不同 digest 时不会调用创建；GHCR API 不提供原子 create-if-absent，外部 package 管理员并发写入必须由发布权限与运维互斥控制，部署真相始终是 immutable Release 内的 digest-only 资产。
 - 三节点产品 E2E 下载 checksum-pinned Calico manifests 时使用 HTTPS/TLS 约束、连接与总时限以及有限次数的全错误重试，避免 GitHub Raw 的瞬时连接重置把应用部署前的基础设施下载误判为产品回归。
 
 ### Security

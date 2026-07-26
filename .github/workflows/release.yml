@@ -75,7 +75,41 @@ jobs:
             grep -Fq "### $heading" "$release_section_file"
           done
 
+      - name: Verify source lock before release state detection
+        run: scripts/verify-source-lock.py validate
+
+      - name: Detect existing release
+        id: release-presence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          existing_release_json="$RUNNER_TEMP/existing-release.json"
+          existing_asset_directory="$RUNNER_TEMP/existing-release-assets"
+          existing_release_error="$(mktemp)"
+          if gh api \
+            --method GET \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
+            >"$existing_release_json" \
+            2>"$existing_release_error"
+          then
+            mkdir -p "$existing_asset_directory"
+            gh release download "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --dir "$existing_asset_directory"
+            release_present="true"
+          elif grep -Fq "HTTP 404" "$existing_release_error"; then
+            release_present="false"
+          else
+            cat "$existing_release_error" >&2
+            exit 1
+          fi
+          printf 'present=%s\n' "$release_present" >> "$GITHUB_OUTPUT"
+
       - name: Verify successful main CI and real product E2E
+        if: steps.release-presence.outputs.present == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -89,20 +123,25 @@ jobs:
             --poll-interval-seconds 20
 
       - name: Enable the pinned pnpm package manager
+        if: steps.release-presence.outputs.present == 'false'
         run: corepack enable
 
       - name: Install locked documentation dependencies
+        if: steps.release-presence.outputs.present == 'false'
         working-directory: docs
         run: pnpm install --frozen-lockfile
 
       - name: Run the complete static release gate
+        if: steps.release-presence.outputs.present == 'false'
         run: make validate
 
       - name: Build documentation
+        if: steps.release-presence.outputs.present == 'false'
         working-directory: docs
         run: pnpm build
 
       - name: Package Helm charts and release notes
+        if: steps.release-presence.outputs.present == 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -200,7 +239,42 @@ jobs:
             --manifest sandbox=dist/component-images/sandbox/sandbox-image.json \
             --output-directory dist/preflight
 
+      - name: Detect and verify existing release
+        id: release-state
+        env:
+          RELEASE_PRESENT: ${{ steps.release-presence.outputs.present }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RELEASE_PRESENT" == "true" ]]; then
+            existing_asset_directory="$RUNNER_TEMP/existing-release-assets"
+            verification="$(
+              python3 scripts/verify-release-assets.py \
+                --release-json "$RUNNER_TEMP/existing-release.json" \
+                --asset-directory "$existing_asset_directory" \
+                --version-file VERSION \
+                --source-lock config/source-lock.json \
+                --component-preflight dist/preflight/component-images.json \
+                --platform-revision "$GITHUB_SHA" \
+                --changelog CHANGELOG.md \
+                --application-chart charts/coderushoj \
+                --infrastructure-chart charts/coderushoj-infra
+            )"
+            release_state="$(jq -er '.state' <<<"$verification")"
+            recovered_docs_digest="$(jq -er '.docsDigest' <<<"$verification")"
+            cp "$existing_asset_directory"/* dist/
+          elif [[ "$RELEASE_PRESENT" == "false" ]]; then
+            release_state="fresh"
+            recovered_docs_digest=""
+          else
+            echo "invalid existing release presence state: $RELEASE_PRESENT" >&2
+            exit 1
+          fi
+          printf 'state=%s\n' "$release_state" >> "$GITHUB_OUTPUT"
+          printf 'docs-digest=%s\n' "$recovered_docs_digest" >> "$GITHUB_OUTPUT"
+
       - name: Set up QEMU for cross-architecture builds
+        if: steps.release-state.outputs.state == 'fresh'
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
 
       - name: Set up Docker Buildx
@@ -223,6 +297,7 @@ jobs:
           done
 
       - name: Log in to GHCR
+        if: steps.release-state.outputs.state != 'published'
         uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.0.0
         with:
           registry: ghcr.io
@@ -230,6 +305,7 @@ jobs:
           password: ${{ github.token }}
 
       - name: Build and publish staged multi-architecture documentation image
+        if: steps.release-state.outputs.state == 'fresh'
         id: push
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.18.0
         with:
@@ -248,6 +324,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Attest documentation image with GitHub OIDC
+        if: steps.release-state.outputs.state == 'fresh'
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.0
         with:
           subject-name: ${{ env.DOCS_IMAGE }}
@@ -255,6 +332,7 @@ jobs:
           push-to-registry: true
 
       - name: Record documentation image manifest
+        if: steps.release-state.outputs.state == 'fresh'
         env:
           IMAGE_DIGEST: ${{ steps.push.outputs.digest }}
         shell: bash
@@ -270,6 +348,7 @@ jobs:
             > dist/docs-image.json
 
       - name: Validate and assemble digest-only production image values
+        if: steps.release-state.outputs.state == 'fresh'
         shell: bash
         run: |
           set -euo pipefail
@@ -301,6 +380,7 @@ jobs:
           done
 
       - name: Render and validate digest-only production deployment
+        if: steps.release-state.outputs.state == 'fresh'
         shell: bash
         run: |
           set -euo pipefail
@@ -317,6 +397,7 @@ jobs:
             dist/production-render.yaml
 
       - name: Generate artifact checksums
+        if: steps.release-state.outputs.state == 'fresh'
         shell: bash
         run: |
           set -euo pipefail
@@ -329,34 +410,12 @@ jobs:
           test -s SHA256SUMS
 
       - name: Create verified draft GitHub Release
+        if: steps.release-state.outputs.state == 'fresh'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          existing_release_error="$(mktemp)"
-          if existing_release_json="$(
-            gh api \
-              --method GET \
-              "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
-              2>"$existing_release_error"
-          )"; then
-            existing_release_draft="$(
-              jq -r \
-                '.draft | if type == "boolean" then tostring else error("draft must be boolean") end' \
-                <<<"$existing_release_json"
-            )"
-            if [[ "$existing_release_draft" == "true" ]]; then
-              gh release delete "$GITHUB_REF_NAME" --yes
-            else
-              echo "refusing to replace existing published release $GITHUB_REF_NAME" >&2
-              exit 1
-            fi
-          elif ! grep -Fq "HTTP 404" "$existing_release_error"; then
-            cat "$existing_release_error" >&2
-            exit 1
-          fi
-
           gh release create "$GITHUB_REF_NAME" \
             dist/*.tgz \
             dist/SHA256SUMS \
@@ -371,16 +430,45 @@ jobs:
             --notes-file dist/release-notes.md
           gh api \
             --method GET \
-            "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" |
-            jq -e '.draft == true' >/dev/null
+            "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
+            > "$RUNNER_TEMP/created-draft-release.json"
+          mkdir -p "$RUNNER_TEMP/created-release-assets"
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir "$RUNNER_TEMP/created-release-assets"
+          python3 scripts/verify-release-assets.py \
+            --release-json "$RUNNER_TEMP/created-draft-release.json" \
+            --asset-directory "$RUNNER_TEMP/created-release-assets" \
+            --version-file VERSION \
+            --source-lock config/source-lock.json \
+            --component-preflight dist/preflight/component-images.json \
+            --platform-revision "$GITHUB_SHA" \
+            --changelog CHANGELOG.md \
+            --application-chart charts/coderushoj \
+            --infrastructure-chart charts/coderushoj-infra |
+            jq -e '.state == "draft"' >/dev/null
 
       - name: Publish verified documentation version tag
         env:
-          IMAGE_DIGEST: ${{ steps.push.outputs.digest }}
+          FRESH_DOCS_DIGEST: ${{ steps.push.outputs.digest }}
+          RECOVERED_DOCS_DIGEST: ${{ steps.release-state.outputs.docs-digest }}
+          RELEASE_STATE: ${{ steps.release-state.outputs.state }}
         shell: bash
         run: |
           set -euo pipefail
-          docs_digest="$IMAGE_DIGEST"
+          case "$RELEASE_STATE" in
+            fresh)
+              docs_digest="$FRESH_DOCS_DIGEST"
+              ;;
+            draft|published)
+              docs_digest="$RECOVERED_DOCS_DIGEST"
+              ;;
+            *)
+              echo "unknown release state: $RELEASE_STATE" >&2
+              exit 1
+              ;;
+          esac
+          [[ "$docs_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           docs_inspect_error="$(mktemp)"
           if docs_inspect="$(
             docker buildx imagetools inspect "$DOCS_IMAGE:$GITHUB_REF_NAME" \
@@ -395,6 +483,10 @@ jobs:
               exit 1
             fi
             echo "documentation version tag already has verified digest $docs_digest"
+          elif [[ "$RELEASE_STATE" == "published" ]]; then
+            cat "$docs_inspect_error" >&2
+            echo "published release is missing its documentation version tag" >&2
+            exit 1
           elif grep -Eiq 'manifest unknown|not found' "$docs_inspect_error"; then
             docker buildx imagetools create \
               --tag "$DOCS_IMAGE:$GITHUB_REF_NAME" \
@@ -412,11 +504,39 @@ jobs:
       - name: Publish verified GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_STATE: ${{ steps.release-state.outputs.state }}
         shell: bash
         run: |
           set -euo pipefail
+          if [[ "$RELEASE_STATE" == "published" ]]; then
+            echo "exact immutable GitHub Release is already published"
+            exit 0
+          fi
+          case "$RELEASE_STATE" in
+            fresh)
+              release_asset_directory="$RUNNER_TEMP/created-release-assets"
+              ;;
+            draft)
+              release_asset_directory="$RUNNER_TEMP/existing-release-assets"
+              ;;
+            *)
+              echo "unknown release state: $RELEASE_STATE" >&2
+              exit 1
+              ;;
+          esac
           gh release edit "$GITHUB_REF_NAME" --draft=false
           gh api \
             --method GET \
-            "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" |
-            jq -e '.draft == false and .immutable == true' >/dev/null
+            "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
+            > "$RUNNER_TEMP/published-release.json"
+          python3 scripts/verify-release-assets.py \
+            --release-json "$RUNNER_TEMP/published-release.json" \
+            --asset-directory "$release_asset_directory" \
+            --version-file VERSION \
+            --source-lock config/source-lock.json \
+            --component-preflight dist/preflight/component-images.json \
+            --platform-revision "$GITHUB_SHA" \
+            --changelog CHANGELOG.md \
+            --application-chart charts/coderushoj \
+            --infrastructure-chart charts/coderushoj-infra |
+            jq -e '.state == "published"' >/dev/null

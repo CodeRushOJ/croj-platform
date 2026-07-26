@@ -34,8 +34,8 @@ CodeRushOJ 遵循 [SemVer](https://semver.org/) 和协调发布模型。各服�
 6. 在上述四个真实 `main` SHA 上创建各组件自己的 annotated SemVer tag；组件 tag 不要求与平台版本相同。等待各仓双架构镜像、SBOM、OIDC provenance 和 digest JSON 全部成功。
 7. 把平台 `config/source-lock.json` v3 的 `commit` 更新到四个 tag 实际指向的 40 位 SHA，把 `releaseTag` 更新为对应组件的精确正式 tag，并记录组件专属 `releaseManifestAsset` 与发布资产字节的 64 位小写 `releaseManifestSha256`；同时更新 `VERSION`、Chart、`CHANGELOG.md` 和文档，再用这组最终发布输入重跑完整产品 E2E。候选分支 SHA、tag target、资产 checksum 或镜像 manifest revision 任一不一致时必须 fail closed。
 8. 合并平台 PR 后，只在平台最新 `main` 创建 annotated tag。CI 构建双架构 Docs 镜像，收集四个组件的 digest JSON，并严格核对仓库、tag、source lock revision、digest、`linux/amd64`/`linux/arm64` registry index。
-9. CI 生成 `production-images.yaml`/JSON，以 digest-only values 渲染并用 Kubeconform 校验生产 Helm，打包 Chart、render、release notes 与 SHA-256 checksums。所有 checksums 完成后，CI 创建并上传完整 verified draft GitHub Release；重跑可替换 draft，但不得覆盖已发布 Release。
-10. CI 在 draft 存在后才提升 Docs SemVer 镜像 tag：tag 不存在时创建，已存在且 digest 相同时幂等继续，digest 不同时失败且不得覆盖。提升验证成功后才发布 draft，并通过 GitHub API 验证 Release 满足 `draft=false` 与 `immutable=true`。
+9. CI 在首次 registry 写入前用 Actions token 查询并下载同 tag Release，并在所有状态重新下载四组件公开 manifest、按 source lock hash-before-parse 校验和生成可信 preflight。没有 Release 时才生成 `production-images.yaml`/JSON、digest-only render、Chart、release notes 与 SHA-256 checksums，并创建完整 verified draft；已有 draft 时严格验证 bot 作者、精确资产集合、checksums、版本、平台 SHA、source lock 组件 revision/tag，把恢复清单的四组件对象与 preflight 完全比较，核对五镜像 repository/digest/platform 和当前 Chart 内容，并从当前 CHANGELOG/Chart 重建比较 notes/render，复用其中的 Docs digest，不得删除、编辑或替换资产；已有 published Release 只有在相同验证通过且 `immutable=true` 时才视为幂等完成。
+10. CI 在 verified draft 存在后才提升 Docs SemVer 镜像 tag。workflow 执行写前检查，仅在未观察到 tag 时创建，已存在且 digest 相同时继续，不同时失败，并在创建后复核；GHCR API 不提供原子 create-if-absent，因此外部 package 管理员的并发写入必须通过最小发布权限和运维互斥避免。提升验证成功后才发布 draft，并再次验证 immutable Release；部署真相只来自该 Release 的 digest-only 资产。
 11. 使用 Release 的 `production-images.yaml` 部署，观察 API 错误率、队列滞后、Job 失败和数据库状态；满足观察窗口后关闭发版 Issue。
 
 当前 source lock v3 固定的组件资产为：

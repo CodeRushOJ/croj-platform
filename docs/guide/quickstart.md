@@ -109,7 +109,7 @@ helm upgrade --install coderushoj ./charts/coderushoj \
 | Judging Server | `judging-server-image.json` | `813d063d844fb0e19554fa15589d24c6052dbd85aa3cafc1dfdb4b5af2c71fbd` |
 | Sandbox | `sandbox-image.json` | `3b729035b7a7760ed25d86905c4db2da76bb21886df2798b0db0f4cdeb14e0ef` |
 
-发布采用 fail-closed draft transaction：所有最终制品 checksums 完成后，workflow 才创建并上传完整 verified draft GitHub Release；重跑可删除并替换同 tag 的 draft，但遇到已发布 Release 必须停止。随后 Docs SemVer tag 仅在不存在时创建；若已存在且 digest 相同则幂等继续，不同则停止且绝不覆盖。最后 workflow 才把 draft 发布，并通过 API 验证 `draft=false` 与 `immutable=true`。
+发布采用可恢复的 fail-closed draft transaction：workflow 在首次 registry 写入前用 Actions token 查询并下载同 tag Release，并在所有状态重新下载四组件公开 manifest、按 source lock hash-before-parse 校验并检查 registry index。没有 Release 时才构建新 Docs staging 镜像和完整资产；已有 draft 时严格验证作者、精确资产集合、checksums、版本、平台 SHA、source lock，把恢复清单的四组件对象与可信 preflight 完全比较，并用当前 CHANGELOG 与 Chart 重建核对 notes/render，再以 draft 内的 Docs digest 恢复 promotion，绝不删除或替换 draft；已有 published Release 只有在同样验证通过且 `immutable=true` 时才作为幂等完成。Docs SemVer promotion 采用写前检查和写后复核：已观察到不同 digest 时不调用创建，但 GHCR API 不提供原子 create-if-absent，外部 package 管理员的并发写入仍须靠最小发布权限和运维互斥避免。生产部署只信任 immutable Release 内的 digest-only 资产。
 
 ```bash
 make source-verify

@@ -2,6 +2,7 @@
 """Verify that an existing GitHub Release is the exact release for this checkout."""
 
 import argparse
+import decimal
 import hashlib
 import json
 import pathlib
@@ -238,6 +239,168 @@ def chart_archive_files(archive, chart_name):
     return files
 
 
+def decode_quoted_yaml_string(value, label, line_number):
+    if value.startswith('"'):
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError as error:
+            raise VerificationError(
+                f"{label} Chart.yaml has an invalid quoted string at line {line_number}"
+            ) from error
+        if not isinstance(decoded, str):
+            raise VerificationError(
+                f"{label} Chart.yaml has a non-string key at line {line_number}"
+            )
+        return decoded
+
+    decoded = []
+    index = 1
+    while index < len(value):
+        character = value[index]
+        if character != "'":
+            decoded.append(character)
+            index += 1
+            continue
+        if index + 1 < len(value) and value[index + 1] == "'":
+            decoded.append("'")
+            index += 2
+            continue
+        if index == len(value) - 1:
+            return "".join(decoded)
+        break
+    raise VerificationError(
+        f"{label} Chart.yaml has an invalid quoted string at line {line_number}"
+    )
+
+
+def yaml_value_without_comment(raw_value, label, line_number):
+    value = raw_value.strip()
+    if not value or value[0] not in "\"'":
+        for index, character in enumerate(value):
+            if character == "#" and (index == 0 or value[index - 1].isspace()):
+                return value[:index].rstrip()
+        return value
+
+    quote = value[0]
+    index = 1
+    while index < len(value):
+        character = value[index]
+        if quote == '"' and character == "\\":
+            index += 2
+            continue
+        if character != quote:
+            index += 1
+            continue
+        if quote == "'" and index + 1 < len(value) and value[index + 1] == "'":
+            index += 2
+            continue
+        suffix = value[index + 1 :]
+        if suffix and not suffix[0].isspace():
+            raise VerificationError(
+                f"{label} Chart.yaml has invalid metadata at line {line_number}"
+            )
+        remainder = suffix.strip()
+        if remainder and not remainder.startswith("#"):
+            raise VerificationError(
+                f"{label} Chart.yaml has invalid metadata at line {line_number}"
+            )
+        return value[: index + 1]
+    raise VerificationError(
+        f"{label} Chart.yaml has an invalid quoted string at line {line_number}"
+    )
+
+
+def yaml_mapping_parts(line, label, line_number):
+    quote = None
+    index = 0
+    while index < len(line):
+        character = line[index]
+        if quote == '"' and character == "\\":
+            index += 2
+            continue
+        if quote is not None:
+            if character == quote:
+                if quote == "'" and index + 1 < len(line) and line[index + 1] == "'":
+                    index += 2
+                    continue
+                quote = None
+            index += 1
+            continue
+        if character in "\"'":
+            quote = character
+            index += 1
+            continue
+        if character == ":" and (
+            index + 1 == len(line) or line[index + 1].isspace()
+        ):
+            return line[:index].strip(), line[index + 1 :]
+        index += 1
+    raise VerificationError(
+        f"{label} Chart.yaml contains invalid metadata at line {line_number}"
+    )
+
+
+def yaml_key(raw_key, label, line_number):
+    if raw_key.startswith(("'", '"')):
+        key = decode_quoted_yaml_string(raw_key, label, line_number)
+    else:
+        key = raw_key
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", key):
+        raise VerificationError(
+            f"{label} Chart.yaml contains invalid metadata at line {line_number}"
+        )
+    return key
+
+
+def yaml_scalar(raw_value, label, line_number):
+    value = yaml_value_without_comment(raw_value, label, line_number)
+    if not value:
+        return ("null", None)
+    if value.startswith(("'", '"')):
+        return ("string", decode_quoted_yaml_string(value, label, line_number))
+    if value[0] in "[{" or value[0] in "|>":
+        raise VerificationError(
+            f"{label} Chart.yaml contains unsupported nested metadata at line {line_number}"
+        )
+    if value[0] in ",]}%@`!&*" or value.startswith(("- ", "? ")):
+        raise VerificationError(
+            f"{label} Chart.yaml contains unsupported YAML syntax at line {line_number}"
+        )
+    if ": " in value:
+        raise VerificationError(
+            f"{label} Chart.yaml contains unsupported nested metadata at line {line_number}"
+        )
+
+    if re.fullmatch(r"(?:~|null)", value, re.IGNORECASE):
+        return ("null", None)
+    if re.fullmatch(r"(?:true|false)", value, re.IGNORECASE):
+        return ("boolean", value.lower() == "true")
+
+    integer = value.replace("_", "")
+    if re.fullmatch(r"[-+]?0[0-7]+", integer):
+        return ("integer", int(integer, 8))
+    if re.fullmatch(r"[-+]?[0-9]+", integer):
+        return ("integer", int(integer, 10))
+    if re.fullmatch(r"[-+]?0o[0-7]+", integer, re.IGNORECASE):
+        return ("integer", int(integer, 8))
+    if re.fullmatch(r"[-+]?0x[0-9a-f]+", integer, re.IGNORECASE):
+        return ("integer", int(integer, 16))
+    if re.fullmatch(r"[-+]?0b[01]+", integer, re.IGNORECASE):
+        return ("integer", int(integer, 2))
+
+    floating = value.replace("_", "")
+    if re.fullmatch(
+        r"[-+]?(?:(?:[0-9]+\.[0-9]*|[0-9]*\.[0-9]+)"
+        r"(?:e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)",
+        floating,
+        re.IGNORECASE,
+    ):
+        return ("float", decimal.Decimal(floating))
+    if re.fullmatch(r"[-+]?\.(?:inf|nan)", floating, re.IGNORECASE):
+        return ("float", floating.lower().lstrip("+"))
+    return ("string", value)
+
+
 def chart_metadata(contents, label):
     try:
         text = contents.decode("utf-8")
@@ -253,36 +416,31 @@ def chart_metadata(contents, label):
             raise VerificationError(
                 f"{label} Chart.yaml contains unsupported nested metadata at line {line_number}"
             )
-        key, separator, raw_value = line.partition(":")
-        if not separator or not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", key):
-            raise VerificationError(
-                f"{label} Chart.yaml contains invalid metadata at line {line_number}"
-            )
+        key_text, raw_value = yaml_mapping_parts(line, label, line_number)
+        key = yaml_key(key_text, label, line_number)
         if key in metadata:
             raise VerificationError(f"{label} Chart.yaml contains duplicate key {key}")
-
-        value = raw_value.strip()
-        if not value:
-            raise VerificationError(f"{label} Chart.yaml key {key} has no scalar value")
-        if value.startswith('"'):
-            try:
-                value = json.loads(value)
-            except json.JSONDecodeError as error:
-                raise VerificationError(
-                    f"{label} Chart.yaml key {key} has an invalid quoted value"
-                ) from error
-            if not isinstance(value, str):
-                raise VerificationError(
-                    f"{label} Chart.yaml key {key} must be a scalar string"
-                )
-        elif value.startswith("'"):
-            if len(value) < 2 or not value.endswith("'"):
-                raise VerificationError(
-                    f"{label} Chart.yaml key {key} has an invalid quoted value"
-                )
-            value = value[1:-1].replace("''", "'")
-        metadata[key] = value
+        metadata[key] = yaml_scalar(raw_value, label, line_number)
     return metadata
+
+
+def validate_chart_metadata(metadata, label, chart_name, version):
+    expected_strings = {
+        "apiVersion": "v2",
+        "name": chart_name,
+        "version": version,
+        "appVersion": version,
+    }
+    for key, expected_value in expected_strings.items():
+        if key not in metadata:
+            raise VerificationError(f"{label} Chart.yaml {key} is required")
+        scalar_type, value = metadata[key]
+        if scalar_type != "string":
+            raise VerificationError(f"{label} Chart.yaml {key} must be a string")
+        if value != expected_value:
+            raise VerificationError(
+                f"{label} Chart.yaml {key} must equal {expected_value}"
+            )
 
 
 def validate_chart(assets, chart_directory, chart_name, version):
@@ -299,18 +457,22 @@ def validate_chart(assets, chart_directory, chart_name, version):
         )
     packaged_metadata = chart_metadata(packaged_chart_yaml, f"packaged {chart_name}")
     source_metadata = chart_metadata(source_chart_yaml, f"source {chart_name}")
+    validate_chart_metadata(
+        packaged_metadata,
+        f"packaged {chart_name}",
+        chart_name,
+        version,
+    )
+    validate_chart_metadata(
+        source_metadata,
+        f"source {chart_name}",
+        chart_name,
+        version,
+    )
     if packaged_metadata != source_metadata:
         raise VerificationError(
             f"{chart_name} Chart.yaml metadata does not match the release checkout"
         )
-    expected_metadata = {
-        "name": chart_name,
-        "version": version,
-        "appVersion": version,
-    }
-    for key, value in expected_metadata.items():
-        if packaged_metadata.get(key) != value:
-            raise VerificationError(f"{chart_name} Chart.yaml {key} must equal {value}")
 
 
 def expected_source_inputs(source_lock):

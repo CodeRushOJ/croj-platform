@@ -88,23 +88,23 @@ jobs:
           mkdir -p dist
           existing_release_json="$RUNNER_TEMP/existing-release.json"
           existing_asset_directory="$RUNNER_TEMP/existing-release-assets"
-          existing_release_error="$(mktemp)"
-          if gh api \
-            --method GET \
-            "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
-            >"$existing_release_json" \
-            2>"$existing_release_error"
+          if scripts/get-release-metadata.sh \
+            "$GITHUB_REPOSITORY" \
+            "$GITHUB_REF_NAME" \
+            "$existing_release_json"
           then
             mkdir -p "$existing_asset_directory"
             gh release download "$GITHUB_REF_NAME" \
               --repo "$GITHUB_REPOSITORY" \
               --dir "$existing_asset_directory"
             release_present="true"
-          elif grep -Fq "HTTP 404" "$existing_release_error"; then
-            release_present="false"
           else
-            cat "$existing_release_error" >&2
-            exit 1
+            lookup_status="$?"
+            if [[ "$lookup_status" -eq 3 ]]; then
+              release_present="false"
+            else
+              exit "$lookup_status"
+            fi
           fi
           printf 'present=%s\n' "$release_present" >> "$GITHUB_OUTPUT"
 
@@ -428,10 +428,10 @@ jobs:
             --verify-tag \
             --title "CodeRushOJ $GITHUB_REF_NAME" \
             --notes-file dist/release-notes.md
-          gh api \
-            --method GET \
-            "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
-            > "$RUNNER_TEMP/created-draft-release.json"
+          scripts/get-release-metadata.sh \
+            "$GITHUB_REPOSITORY" \
+            "$GITHUB_REF_NAME" \
+            "$RUNNER_TEMP/created-draft-release.json"
           mkdir -p "$RUNNER_TEMP/created-release-assets"
           gh release download "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
@@ -525,10 +525,10 @@ jobs:
               ;;
           esac
           gh release edit "$GITHUB_REF_NAME" --draft=false
-          gh api \
-            --method GET \
-            "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
-            > "$RUNNER_TEMP/published-release.json"
+          scripts/get-release-metadata.sh \
+            "$GITHUB_REPOSITORY" \
+            "$GITHUB_REF_NAME" \
+            "$RUNNER_TEMP/published-release.json"
           python3 scripts/verify-release-assets.py \
             --release-json "$RUNNER_TEMP/published-release.json" \
             --asset-directory "$release_asset_directory" \

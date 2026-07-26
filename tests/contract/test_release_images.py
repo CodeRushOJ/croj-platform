@@ -270,6 +270,8 @@ class ReleaseImageManifestTest(unittest.TestCase):
         publication = workflow[publish_release:]
 
         self.assertNotIn("gh release " + "delete", workflow)
+        self.assertNotIn("releases/tags/", workflow)
+        self.assertIn("scripts/get-release-metadata.sh", workflow)
         self.assertIn("verify-release-assets.py", workflow[detect_release:create_draft])
         self.assertIn("steps.release-state.outputs.state == 'fresh'", workflow)
         self.assertIn("--draft", draft_transaction)
@@ -312,8 +314,16 @@ class ReleaseImageManifestTest(unittest.TestCase):
             {
                 "gh": """
 printf '%s\n' "$*" >> "$TEST_GH_LOG"
-if [[ "$1" == "api" ]]; then
+if [[ "$*" == "release view v1.0.2 --repo CodeRushOJ/croj-platform --json apiUrl --jq .apiUrl" ]]; then
+  printf 'https://api.github.com/repos/CodeRushOJ/croj-platform/releases/123\n'
+  exit 0
+fi
+if [[ "$*" == "api https://api.github.com/repos/CodeRushOJ/croj-platform/releases/123" ]]; then
   printf '{"draft":true}\n'
+  exit 0
+fi
+if [[ "$*" == *"releases/tags/"* ]]; then
+  exit 91
 fi
 exit 0
 """,
@@ -360,8 +370,16 @@ printf '{"state":"draft"}\n'
                     {
                         "gh": """
 printf '%s\n' "$*" >> "$TEST_GH_LOG"
-if [[ "$1" == "api" ]]; then
+if [[ "$*" == "release view v1.0.2 --repo CodeRushOJ/croj-platform --json apiUrl --jq .apiUrl" ]]; then
+  printf 'https://api.github.com/repos/CodeRushOJ/croj-platform/releases/123\n'
+  exit 0
+fi
+if [[ "$*" == "api https://api.github.com/repos/CodeRushOJ/croj-platform/releases/123" ]]; then
   printf '{"draft":false,"immutable":true}\n'
+  exit 0
+fi
+if [[ "$*" == *"releases/tags/"* ]]; then
+  exit 91
 fi
 exit 0
 """,
@@ -388,6 +406,82 @@ printf '{"state":"published"}\n'
                     verifier_log.read_text(),
                 )
                 self.assertNotIn("--asset-directory dist", verifier_log.read_text())
+
+    def test_initial_detection_finds_a_draft_through_release_api_url(self):
+        gh_log = self.base / "detect-draft-gh-commands"
+        output = self.base / "github-output"
+        runner_temp = self.base / "detect-draft-runner"
+        runner_temp.mkdir()
+        result = self.run_workflow_step(
+            "Detect existing release",
+            {
+                "gh": """
+printf '%s\n' "$*" >> "$TEST_GH_LOG"
+if [[ "$*" == "release view v1.0.2 --repo CodeRushOJ/croj-platform --json apiUrl --jq .apiUrl" ]]; then
+  printf 'https://api.github.com/repos/CodeRushOJ/croj-platform/releases/123\n'
+  exit 0
+fi
+if [[ "$*" == "api https://api.github.com/repos/CodeRushOJ/croj-platform/releases/123" ]]; then
+  printf '{"draft":true,"assets":[]}\n'
+  exit 0
+fi
+if [[ "$*" == *"releases/tags/"* ]]; then
+  exit 91
+fi
+exit 0
+""",
+            },
+            {
+                "GH_TOKEN": "contract-test-token",
+                "GITHUB_REPOSITORY": "CodeRushOJ/croj-platform",
+                "GITHUB_REF_NAME": "v1.0.2",
+                "GITHUB_OUTPUT": str(output),
+                "RUNNER_TEMP": str(runner_temp),
+                "TEST_GH_LOG": str(gh_log),
+            },
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("present=true\n", output.read_text())
+        self.assertNotIn("releases/tags/", gh_log.read_text())
+
+    def test_initial_detection_distinguishes_absent_release_from_lookup_error(self):
+        for case, stderr, expected_code in (
+            ("absent", "release not found", 0),
+            ("error", "GraphQL transport failed", 1),
+        ):
+            with self.subTest(case=case):
+                output = self.base / f"{case}-github-output"
+                runner_temp = self.base / f"{case}-runner"
+                runner_temp.mkdir()
+                result = self.run_workflow_step(
+                    "Detect existing release",
+                    {
+                        "gh": f"""
+if [[ "$1 $2" == "release view" ]]; then
+  printf '%s\\n' '{stderr}' >&2
+  exit 1
+fi
+if [[ "$*" == *"releases/tags/"* ]]; then
+  exit 91
+fi
+exit 90
+""",
+                    },
+                    {
+                        "GH_TOKEN": "contract-test-token",
+                        "GITHUB_REPOSITORY": "CodeRushOJ/croj-platform",
+                        "GITHUB_REF_NAME": "v1.0.2",
+                        "GITHUB_OUTPUT": str(output),
+                        "RUNNER_TEMP": str(runner_temp),
+                    },
+                )
+
+                self.assertEqual(expected_code, result.returncode)
+                if case == "absent":
+                    self.assertEqual("present=false\n", output.read_text())
+                else:
+                    self.assertIn("GraphQL transport failed", result.stderr)
 
     def test_docs_promotion_does_not_overwrite_an_existing_different_digest(self):
         command_log = self.base / "docker-commands"

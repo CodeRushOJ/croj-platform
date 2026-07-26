@@ -69,6 +69,34 @@ class SecretSafetyTest(unittest.TestCase):
                 findings.append(relative_path)
         self.assertEqual([], findings)
 
+    def test_tracked_files_have_no_personal_machine_or_token_markers(self):
+        result = subprocess.run(
+            ["git", "ls-files"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        markers = (
+            "unique.hzf" + "@" + "gmail.com",
+            "/Users/" + "zephyr",
+            "/Users/" + "zfhe",
+            "zephyr" + "zfhe",
+            "dckr_" + "pat_",
+        )
+        findings = []
+        for relative_path in result.stdout.splitlines():
+            path = ROOT / relative_path
+            if not path.is_file():
+                continue
+            try:
+                contents = path.read_text()
+            except UnicodeDecodeError:
+                continue
+            if any(marker in contents for marker in markers):
+                findings.append(relative_path)
+        self.assertEqual([], findings)
+
 
 if __name__ == "__main__":
     unittest.main()

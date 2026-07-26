@@ -178,7 +178,7 @@ helm upgrade --install coderushoj charts/coderushoj \
 
 ### Docker Hub 镜像源
 
-GHCR 是 canonical registry。若部署网络更适合访问 Docker Hub，可在 production profile 与 Release 的 digest-only values 之后追加 repository override：
+GHCR 是 canonical registry，也是当前平台发版已验证的正式来源。Docker Hub repository override 是预留的可选路径；对应四个 tag 完成公开发布和匿名 digest 复核前不得启用。验证完成后，若部署网络更适合访问 Docker Hub，可在 production profile 与 Release 的 digest-only values 之后追加 repository override：
 
 ```bash
 helm template coderushoj charts/coderushoj \
@@ -198,7 +198,7 @@ helm upgrade --install coderushoj charts/coderushoj \
   --rollback-on-failure --wait --timeout 15m
 ```
 
-`values-production-dockerhub.yaml` 只替换 Frontend、Backend、Judging Server 与 Sandbox 的 repository；它不提供 tag 或 digest，Docs 仍来自 GHCR。使用前必须把四个 Docker Hub OCI index digest 与平台 immutable Release 的 `production-images.json` 逐项核对。项目不发布或支持 `latest`，生产环境不得只按 tag 部署。
+`values-production-dockerhub.yaml` 只替换 Frontend、Backend、Judging Server 与 Sandbox 的 repository；它不提供 tag 或 digest，Docs 仍来自 GHCR。使用前必须确认四个目标 tag 均可匿名拉取，把 Docker Hub OCI index digest 与平台 immutable Release 的 `production-images.json` 逐项核对，并确认其与 GHCR index 完全一致。任一目标缺失或 digest 不一致时继续使用 GHCR。项目不发布或支持 `latest`，生产环境不得只按 tag 部署。
 
 生产发布前还必须确认 Gateway TLS Secret、真实 SMTP TLS 模式、备份、容量和支持 NetworkPolicy 的 CNI。
 生产 DBA 必须先建立 `coderushoj_judge`（或等价的独立 schema/实例）、授予

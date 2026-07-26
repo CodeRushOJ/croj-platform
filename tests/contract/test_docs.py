@@ -183,6 +183,31 @@ class DocumentationContractTest(unittest.TestCase):
         self.assertIn("croj-frontend", readme)
         self.assertIn("croj-backend", readme)
 
+    def test_docker_hub_override_is_not_presented_as_an_already_verified_release(self):
+        readme = (ROOT / "README.md").read_text()
+        index = (DOCS / "index.md").read_text()
+        deployment = (DOCS / "guide/application-deployment.md").read_text()
+        quickstart = (DOCS / "guide/quickstart.md").read_text()
+        changelog = (ROOT / "CHANGELOG.md").read_text()
+        release = changelog.split("## [1.0.3] - 2026-07-26", 1)[1].split(
+            "\n## [", 1
+        )[0]
+
+        self.assertIn("当前已匿名读取并按 digest 验证的正式来源", readme)
+        self.assertIn("待发布/验证", readme)
+        self.assertIn("尚未纳入当前平台发版证据", index)
+        self.assertIn("完成公开发布和匿名 digest 复核前不得启用", deployment)
+        self.assertIn("待完成公开发布与匿名 digest 复核", quickstart)
+        self.assertIn("GHCR 四个 canonical 组件镜像均已匿名验证", release)
+        self.assertIn("Docker Hub 目标 tag 尚未纳入本次发版证据", release)
+
+        for stale_claim in (
+            "Docker Hub 四仓均为 public",
+            "经 digest 验证的 Docker Hub 镜像源",
+            "镜像内容、匿名拉取和无 `latest` 已验证",
+        ):
+            self.assertNotIn(stale_claim, readme + index + release)
+
     def test_application_deployment_is_copy_safe_and_matches_the_current_chart(self):
         deployment = (DOCS / "guide/application-deployment.md").read_text()
         for contract in (

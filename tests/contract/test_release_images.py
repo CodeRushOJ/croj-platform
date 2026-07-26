@@ -27,7 +27,7 @@ RELEASE_MANIFESTS = {
     ),
     "backend": (
         "backend-image.json",
-        "9474f05787b758d76e6115a6c8af329ab30203d141f11996558897b074d505ed",
+        "3df4a8d593802e4fbac26f877173539cbb55e8b59aaac15ea7d2a5afbd7468db",
     ),
     "judging-server": (
         "judging-server-image.json",
@@ -51,7 +51,7 @@ class ReleaseImageManifestTest(unittest.TestCase):
         }
         self.release_tags = {
             "frontend": "v1.0.1",
-            "backend": "v1.0.3",
+            "backend": "v1.0.4",
             "judging-server": "v1.0.2",
             "sandbox": "v1.0.2",
         }
@@ -163,7 +163,7 @@ class ReleaseImageManifestTest(unittest.TestCase):
         self.assertEqual("1.0.0", payload["version"])
         self.assertEqual(self.revisions["backend"], payload["images"]["backend"]["revision"])
         self.assertEqual("v1.0.1", payload["images"]["frontend"]["tag"])
-        self.assertEqual("v1.0.3", payload["images"]["backend"]["tag"])
+        self.assertEqual("v1.0.4", payload["images"]["backend"]["tag"])
         self.assertEqual(
             ["linux/amd64", "linux/arm64"],
             payload["images"]["sandbox"]["platforms"],
@@ -601,7 +601,7 @@ class ExistingReleaseAssetTest(unittest.TestCase):
                     "commit": str(index) * 40,
                     "releaseTag": {
                         "frontend": "v1.0.1",
-                        "backend": "v1.0.3",
+                        "backend": "v1.0.4",
                         "judging-server": "v1.0.2",
                         "sandbox": "v1.0.2",
                     }[component],

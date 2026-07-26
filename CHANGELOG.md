@@ -29,17 +29,21 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Features
 
 - 保持 `1.0.1` 已验收的完整 OJ 运行时、Kubernetes 架构与不可变组件锁，不引入业务行为或数据模型变化。
+- source lock 升级到 v3，在既有 commit 与正式 SemVer tag 之外固定每个组件的 Release manifest 资产名与资产字节 SHA-256。
 
 ### Fixes
 
 - Release job 在执行 `make validate` 前显式运行 `corepack enable` 并按 lockfile 安装文档依赖，确保文档链接契约调用固定版本 `pnpm` 和 VitePress 时工具链已存在；修复 `v1.0.1` 在全部版本、标签、main 与真实产品 E2E 预检通过后，因 `FileNotFoundError: pnpm` 停在静态门禁的问题。
 - 新增发布工作流顺序契约，强制先完成 tag/main 与主干 E2E 信任预检，再执行 package-manager provisioning 和限定于 `docs` 的锁定依赖安装，最后才运行完整静态发布门禁；不可信标签不能先执行仓库控制的 package lifecycle。
-- 四个组件的镜像清单改从其不可变公开 GitHub Release 资产下载，不再错误地使用仅限平台仓库的 `GITHUB_TOKEN` 读取跨仓 Actions artifact；清单字段、源码锁 revision/tag 和四个 GHCR 双架构索引均在首次推送前验证。
+- 四个组件的镜像清单改从其公开 GitHub Release 资产下载，并由 source lock v3 固定资产文件名与 SHA-256，不再错误地使用仅限平台仓库的 `GITHUB_TOKEN` 读取跨仓 Actions artifact；资产字节、清单字段、源码锁 revision/tag 和四个 GHCR 双架构索引均在首次推送前验证。
 - Docs 镜像先仅发布 commit-addressed `sha-<revision>` staging tag；全部生产 values、registry、Helm/Kubeconform 与 checksums 验证完成后才创建 SemVer 镜像 tag，避免前置失败留下看似正式但没有 Release 的部分版本。
+- Release workflow 在解析跨仓 manifest 前校验下载字节，并在全部最终制品 checksums 完成后先创建完整 verified draft Release，再执行 Docs SemVer promotion，最后才发布 Release。
+- Docs SemVer promotion 对不存在的 tag 才创建；已存在且 digest 相同时幂等继续，digest 不同时 fail closed 且不覆盖。重跑可替换同 tag draft，但不会替换已发布 Release。
 
 ### Security
 
 - pnpm 继续由仓库 `packageManager` 与 lockfile 固定版本，Release 不依赖 runner 上未声明的全局包管理器；跨仓输入通过公开 Release 资产读取，无需扩大平台 token 到其他仓库的 Actions 权限。
+- 固定 Frontend `image-artifact.json` / `5af165529a4b8882dc492acf9886c424cf2aaebd43a7a77ea3c76018674d9a17`、Backend `backend-image.json` / `9474f05787b758d76e6115a6c8af329ab30203d141f11996558897b074d505ed`、Judging Server `judging-server-image.json` / `813d063d844fb0e19554fa15589d24c6052dbd85aa3cafc1dfdb4b5af2c71fbd`、Sandbox `sandbox-image.json` / `3b729035b7a7760ed25d86905c4db2da76bb21886df2798b0db0f4cdeb14e0ef`，拒绝同名 Release 资产被事后替换。
 
 ### Migrations
 
@@ -48,6 +52,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Operations
 
 - 保留失败的 annotated `v1.0.0` 与 `v1.0.1` 标签，不移动或删除公开历史；两者均未创建 GitHub Release 或可部署制品。正式制品发布从 `v1.0.2` 开始。
+- GitHub Release 发布后通过 API 验证 `draft=false` 与仓库级 immutable release 生效；若任一步骤失败，未发布 draft 保留为不对外宣称成功的事务边界。
 
 ### Known Limitations
 

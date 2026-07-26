@@ -23,17 +23,33 @@ class TestBundleContractGateTest(unittest.TestCase):
         self.backend_commit = "b" * 40
         self.judging_commit = "c" * 40
         repositories = {
-            "frontend": ("croj-frontend", "a" * 40, "ghcr.io/coderushoj/croj-frontend:dev"),
-            "backend": ("croj-backend", self.backend_commit, "ghcr.io/coderushoj/croj-backend:dev"),
+            "frontend": (
+                "croj-frontend",
+                "a" * 40,
+                "ghcr.io/coderushoj/croj-frontend:dev",
+                "image-artifact.json",
+            ),
+            "backend": (
+                "croj-backend",
+                self.backend_commit,
+                "ghcr.io/coderushoj/croj-backend:dev",
+                "backend-image.json",
+            ),
             "judging-server": (
                 "croj-judging-server",
                 self.judging_commit,
                 "ghcr.io/coderushoj/croj-judging-server:dev",
+                "judging-server-image.json",
             ),
-            "sandbox": ("croj-sandbox", "d" * 40, "ghcr.io/coderushoj/croj-sandbox:dev"),
+            "sandbox": (
+                "croj-sandbox",
+                "d" * 40,
+                "ghcr.io/coderushoj/croj-sandbox:dev",
+                "sandbox-image.json",
+            ),
         }
         sources = {}
-        for component, (repository, commit, image) in repositories.items():
+        for component, (repository, commit, image, release_manifest_asset) in repositories.items():
             sources[component] = {
                 "repository": f"https://github.com/CodeRushOJ/{repository}.git",
                 "commit": commit,
@@ -41,8 +57,10 @@ class TestBundleContractGateTest(unittest.TestCase):
                 "context": ".",
                 "dockerfile": "Dockerfile",
                 "image": image,
+                "releaseManifestAsset": release_manifest_asset,
+                "releaseManifestSha256": "e" * 64,
             }
-        self.lock.write_text(json.dumps({"schemaVersion": 2, "sources": sources}))
+        self.lock.write_text(json.dumps({"schemaVersion": 3, "sources": sources}))
 
         self.backend = self.sources / "backend" / self.backend_commit
         self.judging = self.sources / "judging-server" / self.judging_commit

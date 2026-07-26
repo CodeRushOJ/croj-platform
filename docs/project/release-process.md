@@ -32,10 +32,20 @@ CodeRushOJ 遵循 [SemVer](https://semver.org/) 和协调发布模型。各服�
 4. 完成 MySQL 与对象存储备份恢复演练，以 `SELECT 1`、业务抽样和隐藏测试对象校验恢复结果。
 5. 先合并 Frontend、Backend、Judging Server 与 Sandbox 的候选 PR，并记录四个仓库合并后真实的最新 `main` SHA。禁止把 PR head SHA 当成发布 revision；GitHub merge commit 会产生新的提交。
 6. 在上述四个真实 `main` SHA 上创建各组件自己的 annotated SemVer tag；组件 tag 不要求与平台版本相同。等待各仓双架构镜像、SBOM、OIDC provenance 和 digest JSON 全部成功。
-7. 把平台 `config/source-lock.json` v2 的 `commit` 更新到四个 tag 实际指向的 40 位 SHA，并把 `releaseTag` 更新为对应组件的精确正式 tag；同时更新 `VERSION`、Chart、`CHANGELOG.md` 和文档，再用这组最终发布输入重跑完整产品 E2E。候选分支 SHA、tag target 或镜像 manifest revision 任一不一致时必须 fail closed。
+7. 把平台 `config/source-lock.json` v3 的 `commit` 更新到四个 tag 实际指向的 40 位 SHA，把 `releaseTag` 更新为对应组件的精确正式 tag，并记录组件专属 `releaseManifestAsset` 与发布资产字节的 64 位小写 `releaseManifestSha256`；同时更新 `VERSION`、Chart、`CHANGELOG.md` 和文档，再用这组最终发布输入重跑完整产品 E2E。候选分支 SHA、tag target、资产 checksum 或镜像 manifest revision 任一不一致时必须 fail closed。
 8. 合并平台 PR 后，只在平台最新 `main` 创建 annotated tag。CI 构建双架构 Docs 镜像，收集四个组件的 digest JSON，并严格核对仓库、tag、source lock revision、digest、`linux/amd64`/`linux/arm64` registry index。
-9. CI 生成 `production-images.yaml`/JSON，以 digest-only values 渲染并用 Kubeconform 校验生产 Helm，打包 Chart、render、release notes 与 SHA-256 checksums 后发布 GitHub Release。
-10. 使用 Release 的 `production-images.yaml` 部署，观察 API 错误率、队列滞后、Job 失败和数据库状态；满足观察窗口后关闭发版 Issue。
+9. CI 生成 `production-images.yaml`/JSON，以 digest-only values 渲染并用 Kubeconform 校验生产 Helm，打包 Chart、render、release notes 与 SHA-256 checksums。所有 checksums 完成后，CI 创建并上传完整 verified draft GitHub Release；重跑可替换 draft，但不得覆盖已发布 Release。
+10. CI 在 draft 存在后才提升 Docs SemVer 镜像 tag：tag 不存在时创建，已存在且 digest 相同时幂等继续，digest 不同时失败且不得覆盖。提升验证成功后才发布 draft，并通过 GitHub API 验证 Release 满足 `draft=false` 与 `immutable=true`。
+11. 使用 Release 的 `production-images.yaml` 部署，观察 API 错误率、队列滞后、Job 失败和数据库状态；满足观察窗口后关闭发版 Issue。
+
+当前 source lock v3 固定的组件资产为：
+
+| 组件 | Release manifest 资产 | 固定 SHA-256 |
+| --- | --- | --- |
+| Frontend | `image-artifact.json` | `5af165529a4b8882dc492acf9886c424cf2aaebd43a7a77ea3c76018674d9a17` |
+| Backend | `backend-image.json` | `9474f05787b758d76e6115a6c8af329ab30203d141f11996558897b074d505ed` |
+| Judging Server | `judging-server-image.json` | `813d063d844fb0e19554fa15589d24c6052dbd85aa3cafc1dfdb4b5af2c71fbd` |
+| Sandbox | `sandbox-image.json` | `3b729035b7a7760ed25d86905c4db2da76bb21886df2798b0db0f4cdeb14e0ef` |
 
 ## 紧急修复
 

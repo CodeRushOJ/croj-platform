@@ -256,7 +256,7 @@ class ReleaseWorkflowContractTest(unittest.TestCase):
             "Build and publish staged multi-architecture documentation image"
         )
         login = workflow.index("Log in to GHCR")
-        publish = workflow.index("Publish GitHub Release")
+        publish = workflow.index("Publish verified GitHub Release")
 
         self.assertLess(preflight, component_download)
         self.assertLess(component_download, component_validation)

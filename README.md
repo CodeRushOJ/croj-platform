@@ -25,7 +25,7 @@ make smoke
 
 ## 不可变跨仓库构建
 
-`config/source-lock.json` 只锁定 Frontend、Backend、Judging Server 和 Sandbox 四个外部仓库。source lock v2 的每项只接受 CodeRushOJ 官方 HTTPS 仓库、40 位小写 Git commit、对应的精确正式 SemVer tag、受约束的构建路径和 Chart 使用的精确 `:dev` 镜像名；branch、tag 和 `latest` 都不能替代 commit 作为跨仓库构建真相，`releaseTag` 仅用于核对并下载该 commit 的正式发布清单。Docs 不自引用旧的平台提交：开发与产品 E2E 始终从当前平台 checkout 构建 Docs 镜像，并用当前 `GITHUB_SHA`（本地为 `HEAD`）写入 OCI provenance；正式文档镜像由 release workflow 从最新 `main` 上的 annotated SemVer tag 当前 tree 构建。
+`config/source-lock.json` 只锁定 Frontend、Backend、Judging Server 和 Sandbox 四个外部仓库。source lock v3 的每项只接受 CodeRushOJ 官方 HTTPS 仓库、40 位小写 Git commit、对应的精确正式 SemVer tag、受约束的构建路径、Chart 使用的精确 `:dev` 镜像名，以及组件专属的 Release manifest 文件名和 64 位小写 SHA-256；branch、tag 和 `latest` 都不能替代 commit 作为跨仓库构建真相。当前固定资产为 Frontend `image-artifact.json` / `5af165529a4b8882dc492acf9886c424cf2aaebd43a7a77ea3c76018674d9a17`、Backend `backend-image.json` / `9474f05787b758d76e6115a6c8af329ab30203d141f11996558897b074d505ed`、Judging Server `judging-server-image.json` / `813d063d844fb0e19554fa15589d24c6052dbd85aa3cafc1dfdb4b5af2c71fbd`、Sandbox `sandbox-image.json` / `3b729035b7a7760ed25d86905c4db2da76bb21886df2798b0db0f4cdeb14e0ef`。Release workflow 必须先校验下载资产及最终制品 checksums，再创建完整的 verified draft Release；Docs SemVer tag 仅在不存在时创建，已存在时只接受相同 digest，最后才发布 draft 并验证其已非 draft 且 immutable。Docs 不自引用旧的平台提交：开发与产品 E2E 始终从当前平台 checkout 构建 Docs 镜像，并用当前 `GITHUB_SHA`（本地为 `HEAD`）写入 OCI provenance；正式文档镜像由 release workflow 从最新 `main` 上的 annotated SemVer tag 当前 tree 构建。
 
 ```bash
 make source-verify

@@ -21,6 +21,12 @@ IMAGES = {
     "judging-server": "ghcr.io/coderushoj/croj-judging-server:dev",
     "sandbox": "ghcr.io/coderushoj/croj-sandbox:dev",
 }
+RELEASE_MANIFEST_ASSETS = {
+    "frontend": "image-artifact.json",
+    "backend": "backend-image.json",
+    "judging-server": "judging-server-image.json",
+    "sandbox": "sandbox-image.json",
+}
 SOURCE_FIELDS = {
     "repository",
     "commit",
@@ -28,9 +34,12 @@ SOURCE_FIELDS = {
     "context",
     "dockerfile",
     "image",
+    "releaseManifestAsset",
+    "releaseManifestSha256",
 }
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 RELEASE_TAG_PATTERN = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+$")
+SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
 class LockValidationError(Exception):
@@ -70,8 +79,8 @@ def validate_lock(lock_path):
     unknown_top_level = set(payload) - {"schemaVersion", "sources"}
     if unknown_top_level:
         errors.append(f"unknown top-level field(s): {', '.join(sorted(unknown_top_level))}")
-    if payload.get("schemaVersion") != 2:
-        errors.append("schemaVersion must equal 2")
+    if payload.get("schemaVersion") != 3:
+        errors.append("schemaVersion must equal 3")
 
     sources = payload.get("sources")
     if not isinstance(sources, dict):
@@ -141,6 +150,23 @@ def validate_lock(lock_path):
             errors.append(f"{component}: image must be the exact development image {IMAGES[component]}")
         if isinstance(image, str):
             images.append(image)
+
+        release_manifest_asset = source.get("releaseManifestAsset")
+        if release_manifest_asset != RELEASE_MANIFEST_ASSETS[component]:
+            errors.append(
+                f"{component}: releaseManifestAsset must be the exact asset filename "
+                f"{RELEASE_MANIFEST_ASSETS[component]}"
+            )
+
+        release_manifest_sha256 = source.get("releaseManifestSha256")
+        if (
+            not isinstance(release_manifest_sha256, str)
+            or not SHA256_PATTERN.fullmatch(release_manifest_sha256)
+        ):
+            errors.append(
+                f"{component}: releaseManifestSha256 must be a lowercase "
+                "64-character SHA-256"
+            )
 
         if not missing_fields:
             normalized.append((component, repository, commit, context, dockerfile, image))

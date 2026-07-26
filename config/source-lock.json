@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "sources": {
     "frontend": {
       "repository": "https://github.com/CodeRushOJ/croj-frontend.git",
@@ -7,7 +7,9 @@
       "releaseTag": "v1.0.1",
       "context": ".",
       "dockerfile": "Dockerfile",
-      "image": "ghcr.io/coderushoj/croj-frontend:dev"
+      "image": "ghcr.io/coderushoj/croj-frontend:dev",
+      "releaseManifestAsset": "image-artifact.json",
+      "releaseManifestSha256": "5af165529a4b8882dc492acf9886c424cf2aaebd43a7a77ea3c76018674d9a17"
     },
     "backend": {
       "repository": "https://github.com/CodeRushOJ/croj-backend.git",
@@ -15,7 +17,9 @@
       "releaseTag": "v1.0.3",
       "context": ".",
       "dockerfile": "Dockerfile",
-      "image": "ghcr.io/coderushoj/croj-backend:dev"
+      "image": "ghcr.io/coderushoj/croj-backend:dev",
+      "releaseManifestAsset": "backend-image.json",
+      "releaseManifestSha256": "9474f05787b758d76e6115a6c8af329ab30203d141f11996558897b074d505ed"
     },
     "judging-server": {
       "repository": "https://github.com/CodeRushOJ/croj-judging-server.git",
@@ -23,7 +27,9 @@
       "releaseTag": "v1.0.2",
       "context": ".",
       "dockerfile": "Dockerfile",
-      "image": "ghcr.io/coderushoj/croj-judging-server:dev"
+      "image": "ghcr.io/coderushoj/croj-judging-server:dev",
+      "releaseManifestAsset": "judging-server-image.json",
+      "releaseManifestSha256": "813d063d844fb0e19554fa15589d24c6052dbd85aa3cafc1dfdb4b5af2c71fbd"
     },
     "sandbox": {
       "repository": "https://github.com/CodeRushOJ/croj-sandbox.git",
@@ -31,7 +37,9 @@
       "releaseTag": "v1.0.2",
       "context": ".",
       "dockerfile": "Dockerfile",
-      "image": "ghcr.io/coderushoj/croj-sandbox:dev"
+      "image": "ghcr.io/coderushoj/croj-sandbox:dev",
+      "releaseManifestAsset": "sandbox-image.json",
+      "releaseManifestSha256": "3b729035b7a7760ed25d86905c4db2da76bb21886df2798b0db0f4cdeb14e0ef"
     }
   }
 }

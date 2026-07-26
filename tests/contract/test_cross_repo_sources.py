@@ -54,6 +54,24 @@ RELEASE_TAGS = {
     "judging-server": "v1.0.2",
     "sandbox": "v1.0.2",
 }
+RELEASE_MANIFESTS = {
+    "frontend": (
+        "image-artifact.json",
+        "5af165529a4b8882dc492acf9886c424cf2aaebd43a7a77ea3c76018674d9a17",
+    ),
+    "backend": (
+        "backend-image.json",
+        "9474f05787b758d76e6115a6c8af329ab30203d141f11996558897b074d505ed",
+    ),
+    "judging-server": (
+        "judging-server-image.json",
+        "813d063d844fb0e19554fa15589d24c6052dbd85aa3cafc1dfdb4b5af2c71fbd",
+    ),
+    "sandbox": (
+        "sandbox-image.json",
+        "3b729035b7a7760ed25d86905c4db2da76bb21886df2798b0db0f4cdeb14e0ef",
+    ),
+}
 
 
 def run(command, **kwargs):
@@ -76,8 +94,10 @@ def make_lock(commits, path):
             "context": ".",
             "dockerfile": "Dockerfile",
             "image": IMAGES[component],
+            "releaseManifestAsset": RELEASE_MANIFESTS[component][0],
+            "releaseManifestSha256": RELEASE_MANIFESTS[component][1],
         }
-    path.write_text(json.dumps({"schemaVersion": 2, "sources": sources}, indent=2) + "\n")
+    path.write_text(json.dumps({"schemaVersion": 3, "sources": sources}, indent=2) + "\n")
 
 
 class SourceLockContractTest(unittest.TestCase):
@@ -112,10 +132,21 @@ class SourceLockContractTest(unittest.TestCase):
 
     def test_canonical_lock_selects_the_reviewed_v1_release_candidates(self):
         payload = json.loads(LOCK.read_text())
+        self.assertEqual(3, payload["schemaVersion"])
         self.assertEqual(
             RELEASE_CANDIDATES,
             {
                 component: payload["sources"][component]["commit"]
+                for component in COMPONENTS
+            },
+        )
+        self.assertEqual(
+            RELEASE_MANIFESTS,
+            {
+                component: (
+                    payload["sources"][component]["releaseManifestAsset"],
+                    payload["sources"][component]["releaseManifestSha256"],
+                )
                 for component in COMPONENTS
             },
         )
@@ -126,6 +157,41 @@ class SourceLockContractTest(unittest.TestCase):
                 for component in COMPONENTS
             },
         )
+
+    def test_validator_requires_schema_3_exact_assets_and_lowercase_sha256(self):
+        invalid_cases = (
+            ("schemaVersion", 2, "schemaVersion"),
+            (
+                "releaseManifestAsset",
+                "frontend-image.json",
+                "releaseManifestAsset",
+            ),
+            (
+                "releaseManifestSha256",
+                "A" * 64,
+                "releaseManifestSha256",
+            ),
+            (
+                "releaseManifestSha256",
+                "0" * 63,
+                "releaseManifestSha256",
+            ),
+        )
+        for field, value, expected_error in invalid_cases:
+            with self.subTest(field=field, value=value):
+                with tempfile.TemporaryDirectory() as temporary_directory:
+                    lock = self.valid_lock(temporary_directory)
+                    payload = json.loads(lock.read_text())
+                    if field == "schemaVersion":
+                        payload[field] = value
+                    else:
+                        payload["sources"]["frontend"][field] = value
+                    lock.write_text(json.dumps(payload))
+
+                    result = run(["python3", VALIDATOR, "validate", "--lock", lock])
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(expected_error, result.stderr)
 
     def test_validator_rejects_mutable_ref_unknown_fields_and_duplicate_images(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -179,7 +245,16 @@ class SourceLockContractTest(unittest.TestCase):
                 self.assertIn("ASCII control", result.stderr)
 
     def test_validator_rejects_control_characters_in_every_source_text_field(self):
-        for field in ("repository", "commit", "context", "dockerfile", "image"):
+        for field in (
+            "repository",
+            "commit",
+            "releaseTag",
+            "context",
+            "dockerfile",
+            "image",
+            "releaseManifestAsset",
+            "releaseManifestSha256",
+        ):
             with self.subTest(field=field):
                 with tempfile.TemporaryDirectory() as temporary_directory:
                     lock = self.valid_lock(temporary_directory)

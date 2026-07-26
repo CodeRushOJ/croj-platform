@@ -100,7 +100,16 @@ helm upgrade --install coderushoj ./charts/coderushoj \
 
 ### 不可变源码与开发镜像
 
-`config/source-lock.json` v2 固定 frontend、backend、judging-server 和 sandbox 四个外部仓库的 40 位 commit、对应正式 `releaseTag`、Dockerfile、构建上下文及精确 `:dev` 镜像名。校验器拒绝 branch、可变/畸形 tag、外部仓库、路径穿越、未知字段、缺失组件和重复镜像；checkout 和开发构建仍只认 commit，正式发布才用 `releaseTag` 定位并复核该 commit 的镜像清单。Docs 不进入源码锁，也不会从旧平台提交构建；`images-build` 直接使用当前平台 checkout，并用当前 `GITHUB_SHA`（本地为 `HEAD`）标记 Docs 镜像。平台 checkout 必须完全干净，包括 tracked、staged 和 untracked 文件；若工作树不干净，或环境中的 `GITHUB_SHA` 与 checkout 的 `HEAD` 不同，构建和加载都会 fail closed，避免给未提交内容写入错误 provenance。release workflow 从最新 `main` 的 annotated SemVer tag 构建正式文档镜像，并输出五组件 digest-only 生产清单。
+`config/source-lock.json` v3 固定 frontend、backend、judging-server 和 sandbox 四个外部仓库的 40 位 commit、对应正式 `releaseTag`、Dockerfile、构建上下文、精确 `:dev` 镜像名，以及组件专属的 Release manifest 资产文件名和 SHA-256。校验器拒绝 branch、可变/畸形 tag、外部仓库、路径穿越、未知字段、缺失组件、重复镜像、非预期资产文件名和非 64 位小写十六进制 SHA-256；checkout 和开发构建仍只认 commit，正式发布才用 `releaseTag` 定位该资产，并在解析 JSON 前核对下载字节。Docs 不进入源码锁，也不会从旧平台提交构建；`images-build` 直接使用当前平台 checkout，并用当前 `GITHUB_SHA`（本地为 `HEAD`）标记 Docs 镜像。平台 checkout 必须完全干净，包括 tracked、staged 和 untracked 文件；若工作树不干净，或环境中的 `GITHUB_SHA` 与 checkout 的 `HEAD` 不同，构建和加载都会 fail closed，避免给未提交内容写入错误 provenance。release workflow 从最新 `main` 的 annotated SemVer tag 构建正式文档镜像，并输出五组件 digest-only 生产清单。
+
+| 组件 | Release manifest 资产 | 固定 SHA-256 |
+| --- | --- | --- |
+| Frontend | `image-artifact.json` | `5af165529a4b8882dc492acf9886c424cf2aaebd43a7a77ea3c76018674d9a17` |
+| Backend | `backend-image.json` | `9474f05787b758d76e6115a6c8af329ab30203d141f11996558897b074d505ed` |
+| Judging Server | `judging-server-image.json` | `813d063d844fb0e19554fa15589d24c6052dbd85aa3cafc1dfdb4b5af2c71fbd` |
+| Sandbox | `sandbox-image.json` | `3b729035b7a7760ed25d86905c4db2da76bb21886df2798b0db0f4cdeb14e0ef` |
+
+发布采用 fail-closed draft transaction：所有最终制品 checksums 完成后，workflow 才创建并上传完整 verified draft GitHub Release；重跑可删除并替换同 tag 的 draft，但遇到已发布 Release 必须停止。随后 Docs SemVer tag 仅在不存在时创建；若已存在且 digest 相同则幂等继续，不同则停止且绝不覆盖。最后 workflow 才把 draft 发布，并通过 API 验证 `draft=false` 与 `immutable=true`。
 
 ```bash
 make source-verify

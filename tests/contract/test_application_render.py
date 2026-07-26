@@ -570,6 +570,20 @@ class ApplicationRenderTest(unittest.TestCase):
         self.assertIn("/backend/smtp", missing_smtp.stderr)
 
     def test_production_can_use_verified_docker_hub_mirrors(self):
+        mirror_values = CHART / "values-production-dockerhub.yaml"
+        self.assertEqual(
+            """images:
+  frontend:
+    repository: docker.io/pursuitno1/croj-frontend
+  backend:
+    repository: docker.io/pursuitno1/croj-backend
+  judgingServer:
+    repository: docker.io/pursuitno1/croj-judging-server
+  sandbox:
+    repository: docker.io/pursuitno1/croj-sandbox
+""",
+            mirror_values.read_text(),
+        )
         digest = "sha256:" + "a" * 64
         digest_args = sum(
             (
@@ -582,7 +596,7 @@ class ApplicationRenderTest(unittest.TestCase):
             "--values",
             str(CHART / "values-production.yaml"),
             "--values",
-            str(CHART / "values-production-dockerhub.yaml"),
+            str(mirror_values),
             *digest_args,
             "--set",
             "backend.smtp.host=smtp.operator.example",

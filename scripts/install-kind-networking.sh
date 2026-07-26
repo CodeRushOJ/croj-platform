@@ -32,7 +32,18 @@ download_verified() {
   local target="$download_dir/$name"
   local actual_sha256
 
-  curl -4 --fail --silent --show-error --location \
+  curl -4 \
+    --proto '=https' \
+    --tlsv1.2 \
+    --fail \
+    --silent \
+    --show-error \
+    --location \
+    --connect-timeout 10 \
+    --max-time 120 \
+    --retry 5 \
+    --retry-delay 2 \
+    --retry-all-errors \
     "$manifest_root/$name" --output "$target"
   actual_sha256="$(shasum -a 256 "$target" | awk '{print $1}')"
   [[ "$actual_sha256" == "$expected_sha256" ]] \

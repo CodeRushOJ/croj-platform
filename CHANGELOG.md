@@ -39,6 +39,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Docs 镜像先仅发布 commit-addressed `sha-<revision>` staging tag；全部生产 values、registry、Helm/Kubeconform 与 checksums 验证完成后才创建 SemVer 镜像 tag，避免前置失败留下看似正式但没有 Release 的部分版本。
 - Release workflow 在解析跨仓 manifest 前校验下载字节，并在全部最终制品 checksums 完成后先创建完整 verified draft Release，再执行 Docs SemVer promotion，最后才发布 Release。
 - Docs SemVer promotion 对不存在的 tag 才创建；已存在且 digest 相同时幂等继续，digest 不同时 fail closed 且不覆盖。重跑可替换同 tag draft，但不会替换已发布 Release。
+- 三节点产品 E2E 下载 checksum-pinned Calico manifests 时使用 HTTPS/TLS 约束、连接与总时限以及有限次数的全错误重试，避免 GitHub Raw 的瞬时连接重置把应用部署前的基础设施下载误判为产品回归。
 
 ### Security
 

@@ -29,6 +29,20 @@ CHANGELOG = ROOT / "CHANGELOG.md"
 
 
 class ProductE2EContractTest(unittest.TestCase):
+    def test_network_installer_retries_bounded_checksum_verified_downloads(self):
+        installer = INSTALL_NETWORKING.read_text()
+        self.assertIn("--proto '=https'", installer)
+        self.assertIn("--tlsv1.2", installer)
+        self.assertIn("--connect-timeout 10", installer)
+        self.assertIn("--max-time 120", installer)
+        self.assertIn("--retry 5", installer)
+        self.assertIn("--retry-delay 2", installer)
+        self.assertIn("--retry-all-errors", installer)
+        self.assertLess(
+            installer.index("curl -4"),
+            installer.index('actual_sha256="$(shasum -a 256'),
+        )
+
     def test_product_http_calls_are_bounded_and_readiness_is_observable(self):
         product = PRODUCT_E2E.read_text()
         self.assertIn('readonly curl_connect_timeout_seconds="5"', product)

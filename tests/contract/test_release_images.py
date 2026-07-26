@@ -627,7 +627,7 @@ class ExistingReleaseAssetTest(unittest.TestCase):
                 "apiVersion: v2\n"
                 f"name: {chart_name}\n"
                 f"version: {self.version}\n"
-                f"appVersion: {self.version}\n"
+                f'appVersion: "{self.version}"\n'
             )
             (chart_directory / "values.yaml").write_text("replicaCount: 1\n")
             self.chart_directories[chart_name] = chart_directory
@@ -720,11 +720,15 @@ class ExistingReleaseAssetTest(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def write_chart_archive(self, chart_name):
+    def write_chart_archive(self, chart_name, *, chart_yaml=None):
         archive = self.assets / f"{chart_name}-{self.version}.tgz"
         with tarfile.open(archive, "w:gz") as package:
             for path in sorted(self.chart_directories[chart_name].iterdir()):
-                data = path.read_bytes()
+                data = (
+                    chart_yaml.encode()
+                    if path.name == "Chart.yaml" and chart_yaml is not None
+                    else path.read_bytes()
+                )
                 info = tarfile.TarInfo(f"{chart_name}/{path.name}")
                 info.size = len(data)
                 info.mode = 0o644
@@ -739,6 +743,16 @@ class ExistingReleaseAssetTest(unittest.TestCase):
                 for name in names
             )
         )
+
+    def write_chart_pair(self, chart_name, source_yaml, packaged_yaml=None):
+        (self.chart_directories[chart_name] / "Chart.yaml").write_text(source_yaml)
+        self.write_chart_archive(
+            chart_name,
+            chart_yaml=source_yaml if packaged_yaml is None else packaged_yaml,
+        )
+        (self.assets / "SHA256SUMS").unlink()
+        self.write_checksums()
+        self.write_release_json(draft=True, immutable=False)
 
     def write_release_json(self, *, draft, immutable, author="github-actions[bot]"):
         assets = [
@@ -807,6 +821,289 @@ class ExistingReleaseAssetTest(unittest.TestCase):
         result = self.run_verifier()
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("published", json.loads(result.stdout)["state"])
+
+    def test_accepts_helm_normalized_chart_metadata(self):
+        self.write_chart_archive(
+            "coderushoj",
+            chart_yaml=(
+                "apiVersion: v2\n"
+                f"appVersion: {self.version}\n"
+                "name: coderushoj\n"
+                f"version: {self.version}\n"
+            ),
+        )
+        (self.assets / "SHA256SUMS").unlink()
+        self.write_checksums()
+        self.write_release_json(draft=True, immutable=False)
+
+        result = self.run_verifier()
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("draft", json.loads(result.stdout)["state"])
+
+    def test_accepts_real_helm_package_that_removes_app_version_quotes(self):
+        chart_yaml_path = self.chart_directories["coderushoj"] / "Chart.yaml"
+        source_chart_yaml = chart_yaml_path.read_bytes()
+        self.assertIn(
+            f'appVersion: "{self.version}"\n'.encode(),
+            source_chart_yaml,
+        )
+
+        package_result = subprocess.run(
+            [
+                "helm",
+                "package",
+                str(self.chart_directories["coderushoj"]),
+                "--destination",
+                str(self.assets),
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, package_result.returncode, package_result.stderr)
+        archive = self.assets / f"coderushoj-{self.version}.tgz"
+        with tarfile.open(archive, "r:gz") as package:
+            packaged_chart = package.extractfile("coderushoj/Chart.yaml")
+            self.assertIsNotNone(packaged_chart)
+            packaged_chart_yaml = packaged_chart.read()
+        self.assertIn(
+            f"appVersion: {self.version}\n".encode(),
+            packaged_chart_yaml,
+        )
+        self.assertNotIn(
+            f'appVersion: "{self.version}"\n'.encode(),
+            packaged_chart_yaml,
+        )
+        (self.assets / "SHA256SUMS").unlink()
+        self.write_checksums()
+        self.write_release_json(draft=True, immutable=False)
+
+        result = self.run_verifier()
+
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_rejects_chart_metadata_collections_below_the_root(self):
+        base_yaml = (
+            "apiVersion: v2\n"
+            "name: coderushoj\n"
+            f"version: {self.version}\n"
+            f"appVersion: {self.version}\n"
+        )
+        cases = {
+            "block-map": "annotations:\n  example.com/key: value\n",
+            "block-list": "keywords:\n  - online-judge\n",
+            "flow-map": "annotations: {example.com/key: value}\n",
+            "flow-list": "keywords: [online-judge]\n",
+        }
+        for collection, extra_yaml in cases.items():
+            with self.subTest(collection=collection):
+                self.write_chart_pair(
+                    "coderushoj",
+                    base_yaml + extra_yaml,
+                )
+
+                result = self.run_verifier()
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("unsupported nested metadata", result.stderr)
+
+    def test_rejects_duplicate_chart_metadata_keys_after_yaml_decoding(self):
+        chart_yaml = (
+            "apiVersion: v2\n"
+            "name: coderushoj\n"
+            '"name": coderushoj\n'
+            f"version: {self.version}\n"
+            f"appVersion: {self.version}\n"
+        )
+        self.write_chart_pair("coderushoj", chart_yaml)
+
+        result = self.run_verifier()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("duplicate key name", result.stderr)
+
+    def test_rejects_chart_metadata_scalar_type_drift(self):
+        base_yaml = (
+            "apiVersion: v2\n"
+            "name: coderushoj\n"
+            f"version: {self.version}\n"
+            f"appVersion: {self.version}\n"
+        )
+        cases = {
+            "boolean-versus-string": ('deprecated: "true"\n', "deprecated: true\n"),
+            "null-versus-string": ('icon: "null"\n', "icon: null\n"),
+            "number-versus-string": ('home: "42"\n', "home: 42\n"),
+            "legacy-octal-versus-decimal": ("home: 077\n", "home: 77\n"),
+        }
+        for drift, (source_extra, packaged_extra) in cases.items():
+            with self.subTest(drift=drift):
+                self.write_chart_pair(
+                    "coderushoj",
+                    base_yaml + source_extra,
+                    base_yaml + packaged_extra,
+                )
+
+                result = self.run_verifier()
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("metadata does not match", result.stderr)
+
+    def test_rejects_invalid_yaml_plain_scalar_starters(self):
+        base_yaml = (
+            "apiVersion: v2\n"
+            "name: coderushoj\n"
+            f"version: {self.version}\n"
+            f"appVersion: {self.version}\n"
+        )
+        for invalid_scalar in ("@", "`", ",", "]", "}"):
+            with self.subTest(invalid_scalar=invalid_scalar):
+                self.write_chart_pair(
+                    "coderushoj",
+                    base_yaml + f'description: "{invalid_scalar}"\n',
+                    base_yaml + f"description: {invalid_scalar}\n",
+                )
+
+                result = self.run_verifier()
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("unsupported YAML syntax", result.stderr)
+
+    def test_rejects_inline_comment_without_required_whitespace(self):
+        source_yaml = (
+            "apiVersion: v2\n"
+            "name: coderushoj\n"
+            f"version: {self.version}\n"
+            f"appVersion: {self.version}\n"
+            'description: "release chart"\n'
+        )
+        packaged_yaml = source_yaml.replace(
+            'description: "release chart"\n',
+            'description: "release chart"# invalid comment\n',
+        )
+        self.write_chart_pair("coderushoj", source_yaml, packaged_yaml)
+
+        result = self.run_verifier()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("invalid metadata", result.stderr)
+
+    def test_accepts_equivalent_chart_metadata_with_inline_comments(self):
+        source_yaml = (
+            "apiVersion: v2 # source schema\n"
+            "name: coderushoj # source name\n"
+            f'version: "{self.version}" # source version\n'
+            f'appVersion: "{self.version}" # source application version\n'
+            'description: "Code # Rush" # source description\n'
+        )
+        packaged_yaml = (
+            "description: 'Code # Rush' # packaged description\n"
+            f"appVersion: {self.version} # Helm removed quotes\n"
+            "name: coderushoj # packaged name\n"
+            "apiVersion: v2 # packaged schema\n"
+            f"version: {self.version} # packaged version\n"
+        )
+        self.write_chart_pair("coderushoj", source_yaml, packaged_yaml)
+
+        result = self.run_verifier()
+
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_keeps_non_chart_yaml_files_byte_exact_during_normalization(self):
+        self.write_chart_archive(
+            "coderushoj",
+            chart_yaml=(
+                "apiVersion: v2\n"
+                f"appVersion: {self.version}\n"
+                "name: coderushoj\n"
+                f"version: {self.version}\n"
+            ),
+        )
+        (self.chart_directories["coderushoj"] / "values.yaml").write_bytes(
+            b"replicaCount: 1 \n"
+        )
+        (self.assets / "SHA256SUMS").unlink()
+        self.write_checksums()
+        self.write_release_json(draft=True, immutable=False)
+
+        result = self.run_verifier()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn(
+            "package contents do not exactly match the release checkout",
+            result.stderr,
+        )
+
+    def test_requires_helm_v2_chart_metadata_string_fields(self):
+        valid_lines = {
+            "apiVersion": "apiVersion: v2\n",
+            "name": "name: coderushoj\n",
+            "version": f"version: {self.version}\n",
+            "appVersion": f"appVersion: {self.version}\n",
+        }
+        cases = {
+            "missing-api-version": (
+                "".join(
+                    line for key, line in valid_lines.items() if key != "apiVersion"
+                ),
+                "apiVersion is required",
+            ),
+            "wrong-api-version": (
+                "".join(
+                    "apiVersion: v1\n" if key == "apiVersion" else line
+                    for key, line in valid_lines.items()
+                ),
+                "apiVersion must equal v2",
+            ),
+            "non-string-api-version": (
+                "".join(
+                    "apiVersion: true\n" if key == "apiVersion" else line
+                    for key, line in valid_lines.items()
+                ),
+                "apiVersion must be a string",
+            ),
+        }
+        for field in ("name", "version", "appVersion"):
+            cases[f"missing-{field}"] = (
+                "".join(line for key, line in valid_lines.items() if key != field),
+                f"{field} is required",
+            )
+            cases[f"non-string-{field}"] = (
+                "".join(
+                    f"{field}: true\n" if key == field else line
+                    for key, line in valid_lines.items()
+                ),
+                f"{field} must be a string",
+            )
+
+        for invalid_case, (chart_yaml, expected_error) in cases.items():
+            with self.subTest(invalid_case=invalid_case):
+                self.write_chart_pair("coderushoj", chart_yaml)
+
+                result = self.run_verifier()
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(expected_error, result.stderr)
+
+    def test_rejects_semantically_changed_chart_metadata(self):
+        self.write_chart_archive(
+            "coderushoj",
+            chart_yaml=(
+                "apiVersion: v2\n"
+                f"appVersion: {self.version}\n"
+                "description: tampered release chart\n"
+                "name: coderushoj\n"
+                f"version: {self.version}\n"
+            ),
+        )
+        (self.assets / "SHA256SUMS").unlink()
+        self.write_checksums()
+        self.write_release_json(draft=True, immutable=False)
+
+        result = self.run_verifier()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("Chart.yaml metadata does not match", result.stderr)
 
     def test_rejects_public_release_with_mismatched_author_or_mutability(self):
         for immutable, author in (

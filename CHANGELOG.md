@@ -14,7 +14,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixes
 
-- 后续缺陷修复将记录在本节，并附带对应测试证据。
+- Release 资产校验按 YAML 标量语义比较 Helm 规范化后的 `Chart.yaml`，忽略字段顺序和等价引号变化，同时继续拒绝真实元数据漂移与其他 Chart 文件差异。
 
 ### Security
 

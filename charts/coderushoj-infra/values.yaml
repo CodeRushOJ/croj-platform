@@ -31,7 +31,7 @@ mysql:
       memory: 512Mi
     limits:
       cpu: "1"
-      memory: 1Gi
+      memory: 2Gi
 
 redis:
   image: redis:8.6.2-alpine

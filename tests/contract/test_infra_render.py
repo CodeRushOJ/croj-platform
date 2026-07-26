@@ -245,11 +245,39 @@ class InfrastructureRenderTest(unittest.TestCase):
             topic_job,
         )
 
-    def test_local_memory_requests_fit_workstation_budget(self):
+    def test_local_mysql_supports_bulk_imports_within_workstation_budget(self):
         rendered = self.render()
+
+        mysql = rendered.split(
+            "kind: StatefulSet\nmetadata:\n  name: coderushoj-infra-mysql\n",
+            1,
+        )[1].split("\n---", 1)[0]
+        mysql_memory = re.search(
+            r"resources:\n"
+            r"\s+limits:\n"
+            r"\s+cpu: [^\n]+\n"
+            r"\s+memory: (\d+)(Mi|Gi)\n"
+            r"\s+requests:\n"
+            r"\s+cpu: [^\n]+\n"
+            r"\s+memory: (\d+)(Mi|Gi)",
+            mysql,
+        )
+        self.assertIsNotNone(mysql_memory, "MySQL memory resources were not rendered")
+        limit_value, limit_unit, request_value, request_unit = mysql_memory.groups()
+        limit_mib = int(limit_value) * (1024 if limit_unit == "Gi" else 1)
+        request_mib = int(request_value) * (1024 if request_unit == "Gi" else 1)
+        self.assertGreaterEqual(
+            limit_mib,
+            2048,
+            "local MySQL needs 2 GiB of cgroup headroom for transactional problem imports",
+        )
+        self.assertLessEqual(request_mib, 1024)
+
         requests = re.findall(r"requests:\n\s+cpu: [^\n]+\n\s+memory: (\d+)(Mi|Gi)", rendered)
         self.assertTrue(requests, "no workload memory requests were rendered")
         total_mib = sum(int(value) * (1024 if unit == "Gi" else 1) for value, unit in requests)
+        # Leave at least 2.5 GiB of an 8 GiB Colima VM for application Pods,
+        # Kubernetes system Pods, the container runtime, and transient imports.
         self.assertLessEqual(total_mib, 5632)
 
     def test_production_profile_keeps_secrets_external(self):

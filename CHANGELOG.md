@@ -36,6 +36,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - 修复正式安装无法匿名拉取组件镜像的发布阻断：发版前要求四个 canonical GHCR 组件包可匿名读取，并继续在首次 registry 写入前验证其精确双架构 index。
 - 保留 `corepack enable` 与固定 `pnpm@11.9.0` 的发布工具链门禁，不依赖 runner 上漂移的全局包管理器。
 - 平台 source lock 更新到 Backend `v1.0.4`，统一 Maven、JAR、SBOM 和 OCI 版本元数据，并移除公开 OpenAPI 中的个人联系信息。
+- Kind/本地 MySQL 内存上限由 `1Gi` 提升到 `2Gi`，避免 freeproblemset 批量导入事务触发 OOMKill；`512Mi` request 保持不变，并由合同测试继续守住 8Gi Colima 工作站预算。
 
 ### Security
 
